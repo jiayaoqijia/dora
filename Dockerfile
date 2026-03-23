@@ -9,6 +9,7 @@ RUN npm run build
 # go build env
 FROM golang:1.25.1 AS go-env
 COPY go.mod go.sum /src/
+COPY go-eth2-client /src/go-eth2-client/
 WORKDIR /src
 RUN go mod download
 COPY . .

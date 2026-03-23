@@ -10,6 +10,7 @@ import (
 	"github.com/attestantio/go-eth2-client/spec/capella"
 	"github.com/attestantio/go-eth2-client/spec/deneb"
 	"github.com/attestantio/go-eth2-client/spec/electra"
+	"github.com/attestantio/go-eth2-client/spec/gloas"
 	"github.com/attestantio/go-eth2-client/spec/phase0"
 	"github.com/ethpandaops/dora/utils"
 	dynssz "github.com/pk910/dynamic-ssz"
@@ -47,6 +48,12 @@ func MarshalVersionedSignedBeaconBlockSSZ(dynSsz *dynssz.DynSsz, block *spec.Ver
 		case spec.DataVersionFulu:
 			version = uint64(block.Version)
 			ssz, err = dynSsz.MarshalSSZ(block.Fulu)
+		case spec.DataVersionGloas:
+			version = uint64(block.Version)
+			ssz, err = dynSsz.MarshalSSZ(block.Gloas)
+		case spec.DataVersionHeze:
+			version = uint64(block.Version)
+			ssz, err = dynSsz.MarshalSSZ(block.Heze)
 		default:
 			err = fmt.Errorf("unknown block version")
 		}
@@ -118,6 +125,16 @@ func UnmarshalVersionedSignedBeaconBlockSSZ(dynSsz *dynssz.DynSsz, version uint6
 		if err := dynSsz.UnmarshalSSZ(block.Fulu, ssz); err != nil {
 			return nil, fmt.Errorf("failed to decode fulu signed beacon block: %v", err)
 		}
+	case spec.DataVersionGloas:
+		block.Gloas = &gloas.SignedBeaconBlock{}
+		if err := dynSsz.UnmarshalSSZ(block.Gloas, ssz); err != nil {
+			return nil, fmt.Errorf("failed to decode gloas signed beacon block: %v", err)
+		}
+	case spec.DataVersionHeze:
+		block.Heze = &gloas.SignedBeaconBlockHeze{}
+		if err := dynSsz.UnmarshalSSZ(block.Heze, ssz); err != nil {
+			return nil, fmt.Errorf("failed to decode heze signed beacon block: %v", err)
+		}
 	default:
 		return nil, fmt.Errorf("unknown block version")
 	}
@@ -148,6 +165,12 @@ func MarshalVersionedSignedBeaconBlockJson(block *spec.VersionedSignedBeaconBloc
 	case spec.DataVersionFulu:
 		version = uint64(block.Version)
 		jsonRes, err = block.Fulu.MarshalJSON()
+	case spec.DataVersionGloas:
+		version = uint64(block.Version)
+		jsonRes, err = block.Gloas.MarshalJSON()
+	case spec.DataVersionHeze:
+		version = uint64(block.Version)
+		jsonRes, err = block.Heze.MarshalJSON()
 	default:
 		err = fmt.Errorf("unknown block version")
 	}
@@ -200,6 +223,16 @@ func unmarshalVersionedSignedBeaconBlockJson(version uint64, ssz []byte) (*spec.
 		block.Fulu = &electra.SignedBeaconBlock{}
 		if err := block.Fulu.UnmarshalJSON(ssz); err != nil {
 			return nil, fmt.Errorf("failed to decode fulu signed beacon block: %v", err)
+		}
+	case spec.DataVersionGloas:
+		block.Gloas = &gloas.SignedBeaconBlock{}
+		if err := block.Gloas.UnmarshalJSON(ssz); err != nil {
+			return nil, fmt.Errorf("failed to decode gloas signed beacon block: %v", err)
+		}
+	case spec.DataVersionHeze:
+		block.Heze = &gloas.SignedBeaconBlockHeze{}
+		if err := block.Heze.UnmarshalJSON(ssz); err != nil {
+			return nil, fmt.Errorf("failed to decode heze signed beacon block: %v", err)
 		}
 	default:
 		return nil, fmt.Errorf("unknown block version")
@@ -487,6 +520,10 @@ func getBlockSize(dynSsz *dynssz.DynSsz, block *spec.VersionedSignedBeaconBlock)
 		return dynSsz.SizeSSZ(block.Electra)
 	case spec.DataVersionFulu:
 		return dynSsz.SizeSSZ(block.Fulu)
+	case spec.DataVersionGloas:
+		return dynSsz.SizeSSZ(block.Gloas)
+	case spec.DataVersionHeze:
+		return dynSsz.SizeSSZ(block.Heze)
 	default:
 		return 0, errors.New("unknown version")
 	}

@@ -314,19 +314,22 @@ func (block *Block) setBlockIndex(body *spec.VersionedSignedBeaconBlock) {
 	blockIndex := &BlockBodyIndex{}
 	blockIndex.Graffiti, _ = body.Graffiti()
 
-	executionPayload, _ := body.ExecutionPayload()
-	if executionPayload != nil {
+	// Check for Gloas/Heze - they have ExecutionPayloadBid instead of ExecutionPayload
+	var executionHash phase0.Hash32
+	var executionNumber uint64
+	var hasExecutionData bool
+
+	// Try to get execution payload (for pre-Gloas blocks)
+	executionPayload, err := body.ExecutionPayload()
+	if err == nil && executionPayload != nil {
 		blockIndex.ExecutionExtraData, _ = executionPayload.ExtraData()
-		blockIndex.ExecutionHash, _ = executionPayload.BlockHash()
-		blockIndex.ExecutionNumber, _ = executionPayload.BlockNumber()
+		executionHash, _ = executionPayload.BlockHash()
+		executionNumber, _ = executionPayload.BlockNumber()
+		hasExecutionData = true
 
 		// Calculate transaction count
 		executionTransactions, _ := executionPayload.Transactions()
 		blockIndex.EthTransactionCount = uint64(len(executionTransactions))
-
-		// Calculate blob count
-		blobKzgCommitments, _ := body.BlobKZGCommitments()
-		blockIndex.BlobCount = uint64(len(blobKzgCommitments))
 
 		// Get gas used and gas limit
 		gasUsed, _ := executionPayload.GasUsed()
@@ -335,6 +338,26 @@ func (block *Block) setBlockIndex(body *spec.VersionedSignedBeaconBlock) {
 		gasLimit, _ := executionPayload.GasLimit()
 		blockIndex.GasLimit = gasLimit
 	}
+
+	// For Gloas/Heze, get block hash from ExecutionPayloadBid
+	if !hasExecutionData {
+		executionHash, err = body.ExecutionBlockHash()
+		if err == nil {
+			blockIndex.ExecutionHash = executionHash
+			// ExecutionNumber is not available in bid, will be fetched from EL
+			// Set to 0 to indicate it needs to be looked up
+			hasExecutionData = true
+		}
+	}
+
+	if hasExecutionData {
+		blockIndex.ExecutionHash = executionHash
+		blockIndex.ExecutionNumber = executionNumber
+	}
+
+	// Calculate blob count
+	blobKzgCommitments, _ := body.BlobKZGCommitments()
+	blockIndex.BlobCount = uint64(len(blobKzgCommitments))
 
 	// Calculate block size
 	blockSize, err := getBlockSize(block.dynSsz, body)

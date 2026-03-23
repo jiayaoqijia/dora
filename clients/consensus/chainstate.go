@@ -408,7 +408,21 @@ func (cs *ChainState) GetForkVersionAtEpoch(epoch phase0.Epoch) phase0.Version {
 		return phase0.Version{}
 	}
 
+	// Get Heze fork epoch, supporting both HEZE_FORK_EPOCH and EIP7805_FORK_EPOCH naming
+	hezeForkEpoch := cs.specs.HezeForkEpoch
+	if hezeForkEpoch == nil {
+		hezeForkEpoch = cs.specs.EIP7805ForkEpoch
+	}
+
+	// Get Heze fork version, supporting both HEZE_FORK_VERSION and EIP7805_FORK_VERSION naming
+	hezeForkVersion := cs.specs.HezeForkVersion
+	if hezeForkVersion == [4]byte{} {
+		hezeForkVersion = cs.specs.EIP7805ForkVersion
+	}
+
 	switch {
+	case hezeForkEpoch != nil && epoch >= phase0.Epoch(*hezeForkEpoch):
+		return hezeForkVersion
 	case cs.specs.FuluForkEpoch != nil && epoch >= phase0.Epoch(*cs.specs.FuluForkEpoch):
 		return cs.specs.FuluForkVersion
 	case cs.specs.ElectraForkEpoch != nil && epoch >= phase0.Epoch(*cs.specs.ElectraForkEpoch):

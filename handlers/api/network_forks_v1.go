@@ -136,6 +136,18 @@ func buildNetworkForks(chainState *consensus.ChainState) []*APINetworkForkInfo {
 	addConsensusFork("Electra", specs.ElectraForkEpoch, specs.ElectraForkVersion)
 	addConsensusFork("Fulu", specs.FuluForkEpoch, specs.FuluForkVersion)
 
+	// Add Heze fork (EIP-7805 FOCIL)
+	// Support both HEZE_FORK_EPOCH and EIP7805_FORK_EPOCH naming
+	hezeForkEpoch := specs.HezeForkEpoch
+	if hezeForkEpoch == nil {
+		hezeForkEpoch = specs.EIP7805ForkEpoch
+	}
+	hezeForkVersion := specs.HezeForkVersion
+	if hezeForkVersion == [4]byte{} {
+		hezeForkVersion = specs.EIP7805ForkVersion
+	}
+	addConsensusFork("Heze", hezeForkEpoch, hezeForkVersion)
+
 	// Add BPO forks from BLOB_SCHEDULE
 	for i, blobSchedule := range specs.BlobSchedule {
 		forkVersion := chainState.GetForkVersionAtEpoch(phase0.Epoch(blobSchedule.Epoch))

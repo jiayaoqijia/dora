@@ -54,6 +54,13 @@ type ChainSpecConfig struct {
 	FuluForkVersion      phase0.Version `yaml:"FULU_FORK_VERSION"      check-if-fork:"FuluForkEpoch"`
 	FuluForkEpoch        *uint64        `yaml:"FULU_FORK_EPOCH"        check-if-fork:"FuluForkEpoch"`
 
+	// Heze (EIP-7805 FOCIL)
+	HezeForkVersion      phase0.Version `yaml:"HEZE_FORK_VERSION"      check-if-fork:"HezeForkEpoch"`
+	HezeForkEpoch        *uint64        `yaml:"HEZE_FORK_EPOCH"        check-if-fork:"HezeForkEpoch"`
+	// Alternative naming used by some configs (e.g., kurtosis)
+	EIP7805ForkVersion   phase0.Version `yaml:"EIP7805_FORK_VERSION"   check-if-fork:"EIP7805ForkEpoch"`
+	EIP7805ForkEpoch     *uint64        `yaml:"EIP7805_FORK_EPOCH"     check-if-fork:"EIP7805ForkEpoch"`
+
 	// Time parameters
 	SecondsPerSlot                  uint64 `yaml:"SECONDS_PER_SLOT"`
 	SecondsPerEth1Block             uint64 `yaml:"SECONDS_PER_ETH1_BLOCK"`

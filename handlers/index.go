@@ -291,6 +291,33 @@ func buildIndexPageData(ctx context.Context) (*models.IndexPageData, time.Durati
 		})
 	}
 
+	// Add Heze fork (EIP-7805 FOCIL)
+	// Support both HEZE_FORK_EPOCH and EIP7805_FORK_EPOCH naming
+	hezeForkEpoch := specs.HezeForkEpoch
+	if hezeForkEpoch == nil {
+		hezeForkEpoch = specs.EIP7805ForkEpoch
+	}
+	hezeForkVersion := specs.HezeForkVersion
+	if hezeForkVersion == [4]byte{} {
+		hezeForkVersion = specs.EIP7805ForkVersion
+	}
+	if hezeForkEpoch != nil && *hezeForkEpoch < uint64(18446744073709551615) {
+		currentBlobParams := &consensus.BlobScheduleEntry{
+			Epoch:            *specs.ElectraForkEpoch,
+			MaxBlobsPerBlock: specs.MaxBlobsPerBlockElectra,
+		}
+		forkDigest := chainState.GetForkDigest(hezeForkVersion, currentBlobParams)
+		pageData.NetworkForks = append(pageData.NetworkForks, &models.IndexPageDataForks{
+			Name:       "Heze",
+			Epoch:      *hezeForkEpoch,
+			Version:    hezeForkVersion[:],
+			Time:       uint64(chainState.EpochToTime(phase0.Epoch(*hezeForkEpoch)).Unix()),
+			Active:     uint64(currentEpoch) >= *hezeForkEpoch,
+			Type:       "consensus",
+			ForkDigest: forkDigest[:],
+		})
+	}
+
 	// Add BPO forks from BLOB_SCHEDULE
 	elBlobSchedule := services.GlobalBeaconService.GetExecutionChainState().GetFullBlobSchedule()
 	if len(elBlobSchedule) > 0 {

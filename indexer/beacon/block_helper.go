@@ -285,6 +285,18 @@ func getStateRandaoMixes(v *spec.VersionedBeaconState) ([]phase0.Root, error) {
 		}
 
 		return v.Fulu.RANDAOMixes, nil
+	case spec.DataVersionGloas:
+		if v.Gloas == nil || v.Gloas.RANDAOMixes == nil {
+			return nil, errors.New("no gloas block")
+		}
+
+		return v.Gloas.RANDAOMixes, nil
+	case spec.DataVersionHeze:
+		if v.Heze == nil || v.Heze.RANDAOMixes == nil {
+			return nil, errors.New("no heze block")
+		}
+
+		return v.Heze.RANDAOMixes, nil
 	default:
 		return nil, errors.New("unknown version")
 	}
@@ -307,6 +319,10 @@ func getStateDepositIndex(state *spec.VersionedBeaconState) uint64 {
 		return state.Electra.ETH1DepositIndex
 	case spec.DataVersionFulu:
 		return state.Fulu.ETH1DepositIndex
+	case spec.DataVersionGloas:
+		return state.Gloas.ETH1DepositIndex
+	case spec.DataVersionHeze:
+		return state.Heze.ETH1DepositIndex
 	}
 	return 0
 }
@@ -352,6 +368,18 @@ func getStateCurrentSyncCommittee(v *spec.VersionedBeaconState) ([]phase0.BLSPub
 		}
 
 		return v.Fulu.CurrentSyncCommittee.Pubkeys, nil
+	case spec.DataVersionGloas:
+		if v.Gloas == nil || v.Gloas.CurrentSyncCommittee == nil {
+			return nil, errors.New("no gloas block")
+		}
+
+		return v.Gloas.CurrentSyncCommittee.Pubkeys, nil
+	case spec.DataVersionHeze:
+		if v.Heze == nil || v.Heze.CurrentSyncCommittee == nil {
+			return nil, errors.New("no heze block")
+		}
+
+		return v.Heze.CurrentSyncCommittee.Pubkeys, nil
 	default:
 		return nil, errors.New("unknown version")
 	}
@@ -382,6 +410,18 @@ func getStateDepositBalanceToConsume(v *spec.VersionedBeaconState) (phase0.Gwei,
 		}
 
 		return v.Fulu.DepositBalanceToConsume, nil
+	case spec.DataVersionGloas:
+		if v.Gloas == nil {
+			return 0, errors.New("no gloas block")
+		}
+
+		return v.Gloas.DepositBalanceToConsume, nil
+	case spec.DataVersionHeze:
+		if v.Heze == nil {
+			return 0, errors.New("no heze block")
+		}
+
+		return v.Heze.DepositBalanceToConsume, nil
 	default:
 		return 0, errors.New("unknown version")
 	}
@@ -412,6 +452,18 @@ func getStatePendingDeposits(v *spec.VersionedBeaconState) ([]*electra.PendingDe
 		}
 
 		return v.Fulu.PendingDeposits, nil
+	case spec.DataVersionGloas:
+		if v.Gloas == nil || v.Gloas.PendingDeposits == nil {
+			return nil, errors.New("no gloas block")
+		}
+
+		return v.Gloas.PendingDeposits, nil
+	case spec.DataVersionHeze:
+		if v.Heze == nil || v.Heze.PendingDeposits == nil {
+			return nil, errors.New("no heze block")
+		}
+
+		return v.Heze.PendingDeposits, nil
 	default:
 		return nil, errors.New("unknown version")
 	}
@@ -442,6 +494,18 @@ func getStatePendingWithdrawals(v *spec.VersionedBeaconState) ([]*electra.Pendin
 		}
 
 		return v.Fulu.PendingPartialWithdrawals, nil
+	case spec.DataVersionGloas:
+		if v.Gloas == nil || v.Gloas.PendingPartialWithdrawals == nil {
+			return nil, errors.New("no gloas block")
+		}
+
+		return v.Gloas.PendingPartialWithdrawals, nil
+	case spec.DataVersionHeze:
+		if v.Heze == nil || v.Heze.PendingPartialWithdrawals == nil {
+			return nil, errors.New("no heze block")
+		}
+
+		return v.Heze.PendingPartialWithdrawals, nil
 	default:
 		return nil, errors.New("unknown version")
 	}
@@ -472,6 +536,18 @@ func getStatePendingConsolidations(v *spec.VersionedBeaconState) ([]*electra.Pen
 		}
 
 		return v.Fulu.PendingConsolidations, nil
+	case spec.DataVersionGloas:
+		if v.Gloas == nil || v.Gloas.PendingConsolidations == nil {
+			return nil, errors.New("no gloas block")
+		}
+
+		return v.Gloas.PendingConsolidations, nil
+	case spec.DataVersionHeze:
+		if v.Heze == nil || v.Heze.PendingConsolidations == nil {
+			return nil, errors.New("no heze block")
+		}
+
+		return v.Heze.PendingConsolidations, nil
 	default:
 		return nil, errors.New("unknown version")
 	}
@@ -498,6 +574,26 @@ func getStateProposerLookahead(v *spec.VersionedBeaconState) ([]phase0.Validator
 		}
 
 		return v.Fulu.ProposerLookahead, nil
+	case spec.DataVersionGloas:
+		if v.Gloas == nil || v.Gloas.ProposerLookahead == nil {
+			return nil, errors.New("no gloas block")
+		}
+		// Convert []uint64 to []phase0.ValidatorIndex
+		lookahead := make([]phase0.ValidatorIndex, len(v.Gloas.ProposerLookahead))
+		for i, v := range v.Gloas.ProposerLookahead {
+			lookahead[i] = phase0.ValidatorIndex(v)
+		}
+		return lookahead, nil
+	case spec.DataVersionHeze:
+		if v.Heze == nil || v.Heze.ProposerLookahead == nil {
+			return nil, errors.New("no heze block")
+		}
+		// Convert []uint64 to []phase0.ValidatorIndex
+		lookahead := make([]phase0.ValidatorIndex, len(v.Heze.ProposerLookahead))
+		for i, v := range v.Heze.ProposerLookahead {
+			lookahead[i] = phase0.ValidatorIndex(v)
+		}
+		return lookahead, nil
 	default:
 		return nil, errors.New("unknown version")
 	}

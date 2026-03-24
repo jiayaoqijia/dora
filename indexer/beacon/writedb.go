@@ -11,6 +11,7 @@ import (
 	"github.com/attestantio/go-eth2-client/spec/phase0"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethpandaops/dora/clients/consensus"
+	"github.com/ethpandaops/dora/clients/execution"
 	"github.com/ethpandaops/dora/db"
 	"github.com/ethpandaops/dora/dbtypes"
 	"github.com/ethpandaops/dora/utils"
@@ -261,6 +262,9 @@ func (dbw *dbWriter) buildDbBlock(block *Block, epochStats *EpochStats, override
 	var executionBlockHash phase0.Hash32
 	var executionTransactions []bellatrix.Transaction
 	var executionWithdrawals []*capella.Withdrawal
+	var executionGasUsed uint64
+	var executionGasLimit uint64
+	var executionFeeRecipient common.Address
 
 	executionPayload, _ := blockBody.ExecutionPayload()
 	if executionPayload != nil {
@@ -272,21 +276,40 @@ func (dbw *dbWriter) buildDbBlock(block *Block, epochStats *EpochStats, override
 	}
 
 	// For Gloas/Heze blocks, execution payload is not in the block body.
-	// Try to get block hash from the execution payload bid and fetch block number from EL.
-	if executionPayload == nil && dbw.indexer.executionTimeProvider != nil {
+	// Try to get block hash from the execution payload bid and fetch execution data from EL.
+	if executionPayload == nil {
 		executionBlockHash, _ = blockBody.ExecutionBlockHash()
 		if executionBlockHash != (phase0.Hash32{}) {
-			// Try to get block number from execution client
-			execClients := dbw.indexer.executionTimeProvider.GetExecutionClients()
+			// Try to get execution clients from snooper first
+			var execClients []*execution.Client
+			if dbw.indexer.executionTimeProvider != nil {
+				execClients = dbw.indexer.executionTimeProvider.GetExecutionClients()
+			}
+			// Fallback: use execution client provider if snooper returned no clients
+			if len(execClients) == 0 && dbw.indexer.executionClientProvider != nil {
+				execClients = dbw.indexer.executionClientProvider.GetAllExecutionClients()
+			}
+			// Try to get block info from execution client (using raw JSON-RPC to avoid transaction parsing issues)
+			var elBlockHash common.Hash
+			copy(elBlockHash[:], executionBlockHash[:])
 			for _, execClient := range execClients {
 				if execClient == nil {
 					continue
 				}
-				var blockHash common.Hash
-				copy(blockHash[:], executionBlockHash[:])
-				header, err := execClient.GetRPCClient().GetHeaderByHash(dbw.indexer.ctx, blockHash)
-				if err == nil && header != nil && header.Number != nil {
-					executionBlockNumber = header.Number.Uint64()
+				// Get block info using raw JSON-RPC (avoids transaction type parsing issues with EIP-7702, etc.)
+				blockInfo, err := execClient.GetRPCClient().GetBlockInfoByHash(dbw.indexer.ctx, elBlockHash)
+				if err != nil {
+					continue
+				}
+				if blockInfo != nil {
+					executionBlockNumber = blockInfo.Number.Uint64()
+					// Create empty transactions slice with correct count for DB storage
+					executionTransactions = make([]bellatrix.Transaction, blockInfo.Transactions)
+					// Get gas info
+					executionGasUsed = blockInfo.GasUsed
+					executionGasLimit = blockInfo.GasLimit
+					// Get fee recipient (coinbase)
+					executionFeeRecipient = blockInfo.Coinbase
 					break
 				}
 			}
@@ -431,6 +454,13 @@ func (dbw *dbWriter) buildDbBlock(block *Block, epochStats *EpochStats, override
 				dbBlock.EthGasLimit = payload.GasLimit
 				dbBlock.EthBaseFee = utils.GetBaseFeeAsUint64(payload.BaseFeePerGas)
 				dbBlock.EthFeeRecipient = payload.FeeRecipient[:]
+			}
+		case spec.DataVersionGloas, spec.DataVersionHeze:
+			// For Gloas/Heze, execution data was fetched from EL above
+			if executionGasUsed > 0 {
+				dbBlock.EthGasUsed = executionGasUsed
+				dbBlock.EthGasLimit = executionGasLimit
+				dbBlock.EthFeeRecipient = executionFeeRecipient[:]
 			}
 		}
 	}

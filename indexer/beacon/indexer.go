@@ -15,6 +15,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/ethpandaops/dora/clients/consensus"
+	"github.com/ethpandaops/dora/clients/execution"
 	"github.com/ethpandaops/dora/db"
 	"github.com/ethpandaops/dora/dbtypes"
 	"github.com/ethpandaops/dora/utils"
@@ -22,6 +23,12 @@ import (
 )
 
 const EtherGweiFactor = 1_000_000_000
+
+// ExecutionClientProvider is an interface for getting execution clients
+// This is used as a fallback when snooper is not configured
+type ExecutionClientProvider interface {
+	GetAllExecutionClients() []*execution.Client
+}
 
 // Indexer is responsible for indexing the ethereum beacon chain.
 type Indexer struct {
@@ -31,6 +38,8 @@ type Indexer struct {
 	dynSsz                *dynssz.DynSsz
 	synchronizer          *synchronizer
 	executionTimeProvider ExecutionTimeProvider
+	// executionClientProvider is used as fallback for Gloas/Heze blocks when snooper is not configured
+	executionClientProvider ExecutionClientProvider
 
 	// configuration
 	disableSync           bool
@@ -132,6 +141,12 @@ func NewIndexer(ctx context.Context, logger logrus.FieldLogger, consensusPool *c
 
 func (indexer *Indexer) SetExecutionTimeProvider(executionTimeProvider ExecutionTimeProvider) {
 	indexer.executionTimeProvider = executionTimeProvider
+}
+
+// SetExecutionClientProvider sets the execution client provider for fallback EL queries
+// This is used for Gloas/Heze blocks when snooper is not configured
+func (indexer *Indexer) SetExecutionClientProvider(provider ExecutionClientProvider) {
+	indexer.executionClientProvider = provider
 }
 
 func (indexer *Indexer) GetActivityHistoryLength() uint16 {

@@ -252,3 +252,52 @@ func (ec *ExecutionClient) GetTransactionReceipt(ctx context.Context, txHash com
 func (ec *ExecutionClient) SendTransaction(ctx context.Context, tx *types.Transaction) error {
 	return ec.ethClient.SendTransaction(ctx, tx)
 }
+
+// BlockInfo contains basic block information without full transaction data
+type BlockInfo struct {
+	Number       *big.Int
+	Hash         common.Hash
+	GasUsed      uint64
+	GasLimit     uint64
+	Coinbase     common.Address
+	Transactions int
+}
+
+// GetBlockInfoByHash gets block info by hash using raw JSON-RPC to avoid transaction parsing issues
+// with unsupported transaction types (e.g., EIP-7702)
+func (ec *ExecutionClient) GetBlockInfoByHash(ctx context.Context, hash common.Hash) (*BlockInfo, error) {
+	var result struct {
+		Number       string   `json:"number"`
+		Hash         string   `json:"hash"`
+		GasUsed      string   `json:"gasUsed"`
+		GasLimit     string   `json:"gasLimit"`
+		Miner        string   `json:"miner"`
+		Transactions []string `json:"transactions"`
+	}
+
+	err := ec.rpcClient.CallContext(ctx, &result, "eth_getBlockByHash", hash.Hex(), false)
+	if err != nil {
+		return nil, err
+	}
+
+	if result.Number == "" {
+		return nil, fmt.Errorf("block not found")
+	}
+
+	number, ok := new(big.Int).SetString(result.Number[2:], 16)
+	if !ok {
+		return nil, fmt.Errorf("invalid block number")
+	}
+
+	gasUsed, _ := new(big.Int).SetString(result.GasUsed[2:], 16)
+	gasLimit, _ := new(big.Int).SetString(result.GasLimit[2:], 16)
+
+	return &BlockInfo{
+		Number:       number,
+		Hash:         common.HexToHash(result.Hash),
+		GasUsed:      gasUsed.Uint64(),
+		GasLimit:     gasLimit.Uint64(),
+		Coinbase:     common.HexToAddress(result.Miner),
+		Transactions: len(result.Transactions),
+	}, nil
+}

@@ -68,6 +68,9 @@ func InitChainService(ctx context.Context, logger logrus.FieldLogger) {
 	// Set execution time provider (with snooper manager access for getting execution clients)
 	beaconIndexer.SetExecutionTimeProvider(snooper.NewExecutionTimeProviderWithManager(snooperManager.GetCache(), snooperManager))
 
+	// Set execution client provider as fallback for Gloas/Heze blocks (when snooper is not configured)
+	beaconIndexer.SetExecutionClientProvider(&executionClientProviderImpl{pool: executionPool})
+
 	GlobalBeaconService = &ChainService{
 		ctx:             ctx,
 		logger:          logger,
@@ -604,4 +607,13 @@ func (bs *ChainService) GetConsensusClientForks() []*ConsensusClientFork {
 	})
 
 	return headForks
+}
+
+// executionClientProviderImpl implements beacon.ExecutionClientProvider using the execution pool
+type executionClientProviderImpl struct {
+	pool *execution.Pool
+}
+
+func (e *executionClientProviderImpl) GetAllExecutionClients() []*execution.Client {
+	return e.pool.GetAllEndpoints()
 }

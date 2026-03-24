@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/sirupsen/logrus"
 
 	"github.com/ethpandaops/dora/dbtypes"
 	"github.com/ethpandaops/dora/services"
@@ -54,6 +55,15 @@ func Block(w http.ResponseWriter, r *http.Request) {
 		data.Data = "block"
 		w.Header().Set("Content-Type", "text/html")
 		handleTemplateError(w, r, "block.go", "Block", "notFound", templates.GetTemplate(notfoundTemplateFiles...).ExecuteTemplate(w, "layout", data))
+	default:
+		logrus.WithFields(logrus.Fields{
+			"redirectRefLen": len(redirectRef),
+			"redirectRef":    fmt.Sprintf("%x", redirectRef),
+		}).Warn("Unexpected redirectRef")
+		data := InitPageData(w, r, "blockchain", "/block", fmt.Sprintf("Block %v", numberOrHash), notfoundTemplateFiles)
+		data.Data = "block"
+		w.Header().Set("Content-Type", "text/html")
+		handleTemplateError(w, r, "block.go", "Block", "unexpected", templates.GetTemplate(notfoundTemplateFiles...).ExecuteTemplate(w, "layout", data))
 	}
 }
 

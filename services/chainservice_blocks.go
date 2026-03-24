@@ -674,6 +674,16 @@ func (bs *ChainService) GetDbBlocksByFilter(ctx context.Context, filter *dbtypes
 
 			// filter by EL block number
 			if filter.EthBlockNumber != nil {
+				// For Gloas/Heze blocks, ExecutionNumber may be 0 in memory cache
+				// because it's not available in ExecutionPayloadBid.
+				// Build the full db block to get the correct execution number from EL.
+				if blockIndex.ExecutionNumber == 0 && blockIndex.ExecutionHash != (phase0.Hash32{}) {
+					// Build db block to get execution number from EL
+					dbBlock := block.GetDbBlock(bs.beaconIndexer, true)
+					if dbBlock != nil && dbBlock.EthBlockNumber != nil {
+						blockIndex.ExecutionNumber = *dbBlock.EthBlockNumber
+					}
+				}
 				if blockIndex.ExecutionNumber != *filter.EthBlockNumber {
 					continue
 				}

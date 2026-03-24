@@ -53,9 +53,20 @@
               {{ if $il.Transactions }}
                 <div class="collapse" id="il-txs-{{ $i }}">
                   {{ range $txIdx, $tx := $il.Transactions }}
-                    <div class="p-1 border-bottom small">
-                      <span class="text-muted">#{{ $tx.Index }}</span>
-                      <span class="text-muted ms-2">{{ $tx.Size }} bytes</span>
+                    <div class="p-2 border-bottom small">
+                      <div class="d-flex align-items-center">
+                        <span class="badge rounded-pill text-bg-secondary me-2" style="font-size: 11px;">#{{ $tx.Index }}</span>
+                        <span class="text-muted me-2">{{ $tx.Size }} bytes</span>
+                        <code class="text-monospace il-tx-preview" style="font-size: 11px;">
+                          0x{{ substr 0 32 (printf "%x" $tx.Data) }}{{ if gt (len $tx.Data) 16 }}...{{ end }}
+                        </code>
+                        <button type="button" class="btn btn-sm btn-link p-0 ms-2 il-tx-expand"
+                                data-il-idx="{{ $i }}" data-tx-idx="{{ $tx.Index }}"
+                                data-tx-data="0x{{ printf "%x" $tx.Data }}"
+                                data-tx-size="{{ $tx.Size }}">
+                          <i class="fas fa-expand-alt"></i>
+                        </button>
+                      </div>
                     </div>
                   {{ end }}
                 </div>
@@ -92,6 +103,34 @@
         </div>
       </div>
     </div>
+
+    <!-- Transaction Data Modal -->
+    <div class="modal fade" id="ilTxDataModal" tabindex="-1" aria-labelledby="ilTxDataModalLabel" aria-hidden="true">
+      <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="ilTxDataModalLabel">Transaction Data</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <div class="mb-3">
+              <strong>Transaction:</strong> <span id="ilTxModalIndex"></span><br>
+              <strong>Size:</strong> <span id="ilTxModalSize"></span> bytes
+            </div>
+            <div class="mb-2">
+              <strong>Data (Hex):</strong>
+              <button type="button" class="btn btn-sm btn-outline-secondary ms-2" id="ilTxCopyBtn">
+                <i class="fas fa-copy me-1"></i>Copy
+              </button>
+            </div>
+            <pre id="ilTxModalData" class="text-monospace p-3" style="font-size: 11px; max-height: 400px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; background: var(--bs-tertiary-bg); border-radius: 0.25rem;"></pre>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+          </div>
+        </div>
+      </div>
+    </div>
   {{ else }}
     <div class="p-4 text-center">
       <i class="fas fa-info-circle me-2 text-muted"></i>
@@ -103,4 +142,37 @@
     </div>
   {{ end }}
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  // Handle transaction expand buttons
+  document.querySelectorAll('.il-tx-expand').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var txData = this.getAttribute('data-tx-data');
+      var txIdx = this.getAttribute('data-tx-idx');
+      var txSize = this.getAttribute('data-tx-size');
+      
+      document.getElementById('ilTxModalIndex').textContent = '#' + txIdx;
+      document.getElementById('ilTxModalSize').textContent = txSize;
+      document.getElementById('ilTxModalData').textContent = txData;
+      
+      var modal = new bootstrap.Modal(document.getElementById('ilTxDataModal'));
+      modal.show();
+    });
+  });
+  
+  // Handle copy button
+  document.getElementById('ilTxCopyBtn').addEventListener('click', function() {
+    var txData = document.getElementById('ilTxModalData').textContent;
+    navigator.clipboard.writeText(txData).then(function() {
+      var btn = document.getElementById('ilTxCopyBtn');
+      var originalHtml = btn.innerHTML;
+      btn.innerHTML = '<i class="fas fa-check me-1"></i>Copied!';
+      setTimeout(function() {
+        btn.innerHTML = originalHtml;
+      }, 2000);
+    });
+  });
+});
+</script>
 {{ end }}

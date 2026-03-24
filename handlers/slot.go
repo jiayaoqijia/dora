@@ -16,6 +16,7 @@ import (
 	"github.com/attestantio/go-eth2-client/spec/bellatrix"
 	"github.com/attestantio/go-eth2-client/spec/electra"
 	"github.com/attestantio/go-eth2-client/spec/phase0"
+	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/gorilla/mux"
 	"github.com/sirupsen/logrus"
@@ -828,6 +829,65 @@ func getSlotPageBlockData(ctx context.Context, blockData *services.CombinedBlock
 				blockData.Root[:],
 			)
 			pageData.ExecutionData.HasExecData = hasExecData
+		}
+	} else {
+		// For Gloas/Heze blocks, execution payload is not in the beacon block.
+		// Get execution data from EL client.
+		executionBlockHash, err := blockData.Block.ExecutionBlockHash()
+		if err == nil && executionBlockHash != (phase0.Hash32{}) {
+			// Get execution clients
+			execClients := services.GlobalBeaconService.GetExecutionClients()
+			if len(execClients) > 0 {
+				var elBlockHash common.Hash
+				copy(elBlockHash[:], executionBlockHash[:])
+
+				// Try each EL client until we get the block info
+				for _, execClient := range execClients {
+					if execClient == nil {
+						continue
+					}
+					blockInfo, err := execClient.GetRPCClient().GetBlockInfoByHash(ctx, elBlockHash)
+					if err != nil {
+						continue
+					}
+					if blockInfo != nil {
+						pageData.ExecutionData = &models.SlotPageExecutionData{
+							ParentHash:   blockInfo.ParentHash[:],
+							FeeRecipient: blockInfo.Coinbase[:],
+							StateRoot:    blockInfo.StateRoot[:],
+							ReceiptsRoot: blockInfo.ReceiptsRoot[:],
+							LogsBloom:    blockInfo.LogsBloom,
+							Random:       blockInfo.PrevRandao[:],
+							GasLimit:     blockInfo.GasLimit,
+							GasUsed:      blockInfo.GasUsed,
+							Timestamp:    blockInfo.Timestamp,
+							Time:         time.Unix(int64(blockInfo.Timestamp), 0),
+							ExtraData:    blockInfo.ExtraData,
+							BlockHash:    blockInfo.Hash[:],
+							BlockNumber:  blockInfo.Number.Uint64(),
+						}
+						if blockInfo.BaseFeePerGas != nil {
+							pageData.ExecutionData.BaseFeePerGas = blockInfo.BaseFeePerGas.Uint64()
+						}
+						pageData.TransactionsCount = uint64(blockInfo.Transactions)
+
+						// Get blob gas info from EL block
+						// Note: BlobGasUsed and ExcessBlobGas are not in BlockInfo, need to fetch from full block
+						// For now, we skip blob gas info for Gloas/Heze blocks in slot page
+
+						// Check if execution data exists in blockdb for receipt downloads
+						if blockdb.GlobalBlockDb != nil && blockdb.GlobalBlockDb.SupportsExecData() {
+							hasExecData, _ := blockdb.GlobalBlockDb.HasExecData(
+								ctx,
+								uint64(blockData.Header.Message.Slot),
+								blockData.Root[:],
+							)
+							pageData.ExecutionData.HasExecData = hasExecData
+						}
+						break
+					}
+				}
+			}
 		}
 	}
 

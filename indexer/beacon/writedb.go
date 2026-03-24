@@ -539,6 +539,13 @@ func (dbw *dbWriter) buildDbEpoch(epoch phase0.Epoch, blocks []*Block, epochStat
 			executionWithdrawals, _ := blockBody.Withdrawals()
 			blobKzgCommitments, _ := blockBody.BlobKZGCommitments()
 
+			// For Gloas/Heze blocks, use cached block index data since execution payload is not in block
+			blockIndex := block.GetBlockIndex(dbw.indexer.ctx)
+			txCount := uint64(len(executionTransactions))
+			if txCount == 0 && blockIndex != nil && blockIndex.EthTransactionCount > 0 {
+				txCount = blockIndex.EthTransactionCount
+			}
+
 			var depositRequests []*electra.DepositRequest
 
 			executionRequests, _ := blockBody.ExecutionRequests()
@@ -565,7 +572,7 @@ func (dbw *dbWriter) buildDbEpoch(epoch phase0.Epoch, blocks []*Block, epochStat
 				totalSyncVoted += votedCount
 			}
 
-			dbEpoch.EthTransactionCount += uint64(len(executionTransactions))
+			dbEpoch.EthTransactionCount += txCount
 			dbEpoch.BlobCount += uint64(len(blobKzgCommitments))
 			dbEpoch.WithdrawCount += uint64(len(executionWithdrawals))
 
@@ -616,6 +623,12 @@ func (dbw *dbWriter) buildDbEpoch(epoch phase0.Epoch, blocks []*Block, epochStat
 					payload := blockBody.Fulu.Message.Body.ExecutionPayload
 					dbEpoch.EthGasUsed += payload.GasUsed
 					dbEpoch.EthGasLimit += payload.GasLimit
+				}
+			case spec.DataVersionGloas, spec.DataVersionHeze:
+				// For Gloas/Heze, use cached gas info from blockIndex (fetched from EL)
+				if blockIndex != nil {
+					dbEpoch.EthGasUsed += blockIndex.GasUsed
+					dbEpoch.EthGasLimit += blockIndex.GasLimit
 				}
 			}
 		}

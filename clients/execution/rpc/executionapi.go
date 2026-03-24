@@ -2,6 +2,7 @@ package rpc
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"math/big"
 	"net/url"
@@ -255,24 +256,40 @@ func (ec *ExecutionClient) SendTransaction(ctx context.Context, tx *types.Transa
 
 // BlockInfo contains basic block information without full transaction data
 type BlockInfo struct {
-	Number       *big.Int
-	Hash         common.Hash
-	GasUsed      uint64
-	GasLimit     uint64
-	Coinbase     common.Address
-	Transactions int
+	Number        *big.Int
+	Hash          common.Hash
+	ParentHash    common.Hash
+	StateRoot     common.Hash
+	ReceiptsRoot  common.Hash
+	GasUsed       uint64
+	GasLimit      uint64
+	Coinbase      common.Address
+	Timestamp     uint64
+	BaseFeePerGas *big.Int
+	ExtraData     []byte
+	PrevRandao    common.Hash
+	LogsBloom     []byte
+	Transactions  int
 }
 
 // GetBlockInfoByHash gets block info by hash using raw JSON-RPC to avoid transaction parsing issues
 // with unsupported transaction types (e.g., EIP-7702)
 func (ec *ExecutionClient) GetBlockInfoByHash(ctx context.Context, hash common.Hash) (*BlockInfo, error) {
 	var result struct {
-		Number       string   `json:"number"`
-		Hash         string   `json:"hash"`
-		GasUsed      string   `json:"gasUsed"`
-		GasLimit     string   `json:"gasLimit"`
-		Miner        string   `json:"miner"`
-		Transactions []string `json:"transactions"`
+		Number        string   `json:"number"`
+		Hash          string   `json:"hash"`
+		ParentHash    string   `json:"parentHash"`
+		StateRoot     string   `json:"stateRoot"`
+		ReceiptsRoot  string   `json:"receiptsRoot"`
+		GasUsed       string   `json:"gasUsed"`
+		GasLimit      string   `json:"gasLimit"`
+		Miner         string   `json:"miner"`
+		Timestamp     string   `json:"timestamp"`
+		BaseFeePerGas string   `json:"baseFeePerGas"`
+		ExtraData     string   `json:"extraData"`
+		Difficulty    string   `json:"difficulty"`
+		LogsBloom     string   `json:"logsBloom"`
+		Transactions  []string `json:"transactions"`
 	}
 
 	err := ec.rpcClient.CallContext(ctx, &result, "eth_getBlockByHash", hash.Hex(), false)
@@ -291,13 +308,39 @@ func (ec *ExecutionClient) GetBlockInfoByHash(ctx context.Context, hash common.H
 
 	gasUsed, _ := new(big.Int).SetString(result.GasUsed[2:], 16)
 	gasLimit, _ := new(big.Int).SetString(result.GasLimit[2:], 16)
+	timestamp, _ := new(big.Int).SetString(result.Timestamp[2:], 16)
+	var baseFeePerGas *big.Int
+	if result.BaseFeePerGas != "" {
+		baseFeePerGas, _ = new(big.Int).SetString(result.BaseFeePerGas[2:], 16)
+	}
+	var extraData []byte
+	if result.ExtraData != "" {
+		extraData, _ = hex.DecodeString(result.ExtraData[2:])
+	}
+	var prevRandao common.Hash
+	if result.Difficulty != "" {
+		diffBytes, _ := hex.DecodeString(result.Difficulty[2:])
+		copy(prevRandao[:], diffBytes)
+	}
+	var logsBloom []byte
+	if result.LogsBloom != "" {
+		logsBloom, _ = hex.DecodeString(result.LogsBloom[2:])
+	}
 
 	return &BlockInfo{
-		Number:       number,
-		Hash:         common.HexToHash(result.Hash),
-		GasUsed:      gasUsed.Uint64(),
-		GasLimit:     gasLimit.Uint64(),
-		Coinbase:     common.HexToAddress(result.Miner),
-		Transactions: len(result.Transactions),
+		Number:        number,
+		Hash:          common.HexToHash(result.Hash),
+		ParentHash:    common.HexToHash(result.ParentHash),
+		StateRoot:     common.HexToHash(result.StateRoot),
+		ReceiptsRoot:  common.HexToHash(result.ReceiptsRoot),
+		GasUsed:       gasUsed.Uint64(),
+		GasLimit:      gasLimit.Uint64(),
+		Coinbase:      common.HexToAddress(result.Miner),
+		Timestamp:     timestamp.Uint64(),
+		BaseFeePerGas: baseFeePerGas,
+		ExtraData:     extraData,
+		PrevRandao:    prevRandao,
+		LogsBloom:     logsBloom,
+		Transactions:  len(result.Transactions),
 	}, nil
 }

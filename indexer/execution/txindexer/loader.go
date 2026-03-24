@@ -23,6 +23,9 @@ func (t *TxIndexer) fetchBlockData(ctx context.Context, ref *BlockRef) (*blockDa
 	var transactions []*types.Transaction
 	var blockNumber uint64
 	var blockHash common.Hash
+	var type5FromAddresses map[common.Hash]common.Address
+	var type5OriginalHashes map[common.Hash]common.Hash
+	var type5Types map[common.Hash]uint8
 
 	// Try to extract transactions from beacon block if available
 	if ref.Block != nil {
@@ -56,7 +59,7 @@ func (t *TxIndexer) fetchBlockData(ctx context.Context, ref *BlockRef) (*blockDa
 
 		// Fetch transactions if not already available from beacon block
 		if transactions == nil {
-			txs, bn, bh, coinbase, wdt, err := t.fetchBlockTransactions(ctx, rpcClient, ref.BlockHash)
+			txs, bn, bh, coinbase, wdt, type5From, type5Hashes, type5TxTypes, err := t.fetchBlockTransactions(ctx, rpcClient, ref.BlockHash)
 			if err != nil {
 				lastErr = fmt.Errorf("fetch transactions from %s: %w", client.GetName(), err)
 				t.logger.WithError(err).WithFields(logrus.Fields{
@@ -76,6 +79,18 @@ func (t *TxIndexer) fetchBlockData(ctx context.Context, ref *BlockRef) (*blockDa
 			blockHash = bh
 			feeRecipient = coinbase
 			withdrawals = wdt
+			// Store Type 5 From addresses for later use (will be added to blockData)
+			if len(type5From) > 0 {
+				type5FromAddresses = type5From
+			}
+			// Store Type 5 original hash mappings
+			if len(type5Hashes) > 0 {
+				type5OriginalHashes = type5Hashes
+			}
+			// Store Type 5 original types
+			if len(type5TxTypes) > 0 {
+				type5Types = type5TxTypes
+			}
 		}
 		// blockHash is now set either from beacon block extraction or EL fetch
 
@@ -95,13 +110,16 @@ func (t *TxIndexer) fetchBlockData(ctx context.Context, ref *BlockRef) (*blockDa
 
 		// Success
 		return &blockData{
-			BlockNumber:       blockNumber,
-			BlockHash:         blockHash,
-			Transactions:      transactions,
-			Receipts:          receipts,
-			FeeRecipient:      feeRecipient,
-			Withdrawals:       withdrawals,
-			TotalPriorityFees: totalPriorityFees,
+			BlockNumber:         blockNumber,
+			BlockHash:           blockHash,
+			Transactions:        transactions,
+			Receipts:            receipts,
+			FeeRecipient:        feeRecipient,
+			Withdrawals:         withdrawals,
+			TotalPriorityFees:   totalPriorityFees,
+			Type5FromAddresses:  type5FromAddresses,
+			Type5OriginalHashes: type5OriginalHashes,
+			Type5Types:          type5Types,
 		}, client, nil
 	}
 
@@ -193,10 +211,10 @@ func (t *TxIndexer) fetchBlockTransactions(
 	ctx context.Context,
 	rpcClient *exerpc.ExecutionClient,
 	blockHash []byte,
-) ([]*types.Transaction, uint64, common.Hash, common.Address, []WithdrawalData, error) {
+) ([]*types.Transaction, uint64, common.Hash, common.Address, []WithdrawalData, map[common.Hash]common.Address, map[common.Hash]common.Hash, map[common.Hash]uint8, error) {
 	ethClient := rpcClient.GetEthClient()
 	if ethClient == nil {
-		return nil, 0, common.Hash{}, common.Address{}, nil, fmt.Errorf("ethclient not available")
+		return nil, 0, common.Hash{}, common.Address{}, nil, nil, nil, nil, fmt.Errorf("ethclient not available")
 	}
 
 	hash := common.BytesToHash(blockHash)
@@ -205,12 +223,12 @@ func (t *TxIndexer) fetchBlockTransactions(
 	var raw json.RawMessage
 	err := ethClient.Client().CallContext(ctx, &raw, "eth_getBlockByHash", hash, true)
 	if err != nil {
-		return nil, 0, common.Hash{}, common.Address{}, nil, fmt.Errorf("eth_getBlockByHash failed: %w", err)
+		return nil, 0, common.Hash{}, common.Address{}, nil, nil, nil, nil, fmt.Errorf("eth_getBlockByHash failed: %w", err)
 	}
 
 	// Check if block exists
 	if len(raw) == 0 || string(raw) == "null" {
-		return nil, 0, common.Hash{}, common.Address{}, nil, fmt.Errorf("block not found")
+		return nil, 0, common.Hash{}, common.Address{}, nil, nil, nil, nil, fmt.Errorf("block not found")
 	}
 
 	// Parse header fields and transactions in a single pass to avoid
@@ -224,17 +242,21 @@ func (t *TxIndexer) fetchBlockTransactions(
 		Transactions []json.RawMessage   `json:"transactions"`
 	}
 	if err := json.Unmarshal(raw, &block); err != nil {
-		return nil, 0, common.Hash{}, common.Address{}, nil, fmt.Errorf("unmarshal block: %w", err)
+		return nil, 0, common.Hash{}, common.Address{}, nil, nil, nil, nil, fmt.Errorf("unmarshal block: %w", err)
 	}
 
 	// Free the raw JSON now that we've parsed what we need.
 	raw = nil
 
 	if block.Number == nil {
-		return nil, 0, common.Hash{}, common.Address{}, nil, fmt.Errorf("block number is nil")
+		return nil, 0, common.Hash{}, common.Address{}, nil, nil, nil, nil, fmt.Errorf("block number is nil")
 	}
 
 	transactions := make([]*types.Transaction, 0, len(block.Transactions))
+	type5FromAddresses := make(map[common.Hash]common.Address)
+	type5OriginalHashes := make(map[common.Hash]common.Hash)
+	type5Types := make(map[common.Hash]uint8)
+
 	for idx, rawTx := range block.Transactions {
 		// Check transaction type for compatibility
 		var txHeader struct {
@@ -247,6 +269,10 @@ func (t *TxIndexer) fetchBlockTransactions(
 			case types.LegacyTxType, types.AccessListTxType, types.DynamicFeeTxType,
 				types.BlobTxType, types.SetCodeTxType:
 				isValid = true
+			case 0x05:
+				// Type 5 is a native AA transaction (similar structure to Type 2 DynamicFee)
+				// We'll handle it separately below
+				isValid = true
 			}
 		}
 
@@ -255,6 +281,23 @@ func (t *TxIndexer) fetchBlockTransactions(
 				"txIndex": idx,
 				"txType":  txHeader.Type,
 			}).Debug("skipping unsupported transaction type")
+			continue
+		}
+
+		// Handle Type 5 (native AA) transactions separately since go-ethereum doesn't support them
+		if txHeader.Type == 0x05 {
+			tx, from, originalHash, err := t.parseType5Transaction(rawTx)
+			if err != nil {
+				t.logger.WithError(err).WithField("txIndex", idx).Debug("failed to parse Type 5 transaction")
+				continue
+			}
+			transactions = append(transactions, tx)
+			// Store From address using original hash as key
+			type5FromAddresses[originalHash] = from
+			// Store mapping from computed hash to original hash
+			type5OriginalHashes[tx.Hash()] = originalHash
+			// Store original type (always 5 for native AA)
+			type5Types[originalHash] = 0x05
 			continue
 		}
 
@@ -277,7 +320,7 @@ func (t *TxIndexer) fetchBlockTransactions(
 		})
 	}
 
-	return transactions, block.Number.ToInt().Uint64(), block.Hash, block.Coinbase, withdrawals, nil
+	return transactions, block.Number.ToInt().Uint64(), block.Hash, block.Coinbase, withdrawals, type5FromAddresses, type5OriginalHashes, type5Types, nil
 }
 
 // fetchBlockReceipts fetches receipts for a block from an EL client.
@@ -481,4 +524,104 @@ func (t *TxIndexer) getTraceClients(
 	}
 
 	return clients
+}
+
+// parseType5Transaction parses a Type 5 (native AA) transaction.
+// Type 5 has a similar structure to Type 2 (DynamicFee) but with type 0x05.
+// go-ethereum doesn't natively support Type 5, so we parse it manually.
+// Returns the transaction, From address, original hash, and error.
+// Note: The returned transaction's Hash() will be different from the original hash
+// because go-ethereum computes it as Type 2. Use the returned originalHash for matching.
+func (t *TxIndexer) parseType5Transaction(rawTx json.RawMessage) (*types.Transaction, common.Address, common.Hash, error) {
+	var txData struct {
+		Hash                 *common.Hash        `json:"hash"`
+		ChainID              *hexutil.Big        `json:"chainId"`
+		Nonce                hexutil.Uint64      `json:"nonce"`
+		Gas                  hexutil.Uint64      `json:"gas"`
+		GasPrice             *hexutil.Big        `json:"gasPrice"`
+		MaxFeePerGas         *hexutil.Big        `json:"maxFeePerGas"`
+		MaxPriorityFeePerGas *hexutil.Big        `json:"maxPriorityFeePerGas"`
+		Value                *hexutil.Big        `json:"value"`
+		Input                hexutil.Bytes       `json:"input"`
+		From                 common.Address      `json:"from"`
+		To                   *common.Address     `json:"to"`
+		AccessList           types.AccessList    `json:"accessList"`
+		V                    *hexutil.Big        `json:"v"`
+		R                    *hexutil.Big        `json:"r"`
+		S                    *hexutil.Big        `json:"s"`
+		YParity              *hexutil.Uint64     `json:"yParity"`
+	}
+
+	if err := json.Unmarshal(rawTx, &txData); err != nil {
+		return nil, common.Address{}, common.Hash{}, fmt.Errorf("unmarshal Type 5 tx: %w", err)
+	}
+
+	// Get original hash from JSON
+	var originalHash common.Hash
+	if txData.Hash != nil {
+		originalHash = *txData.Hash
+	}
+
+	// Build a DynamicFeeTx (Type 2) structure, then we'll modify the type
+	chainID := big.NewInt(0)
+	if txData.ChainID != nil {
+		chainID = txData.ChainID.ToInt()
+	}
+
+	value := big.NewInt(0)
+	if txData.Value != nil {
+		value = txData.Value.ToInt()
+	}
+
+	gasFeeCap := big.NewInt(0)
+	if txData.MaxFeePerGas != nil {
+		gasFeeCap = txData.MaxFeePerGas.ToInt()
+	}
+
+	tip := big.NewInt(0)
+	if txData.MaxPriorityFeePerGas != nil {
+		tip = txData.MaxPriorityFeePerGas.ToInt()
+	}
+
+	// Create the inner DynamicFeeTx
+	inner := &types.DynamicFeeTx{
+		ChainID:    chainID,
+		Nonce:      uint64(txData.Nonce),
+		GasFeeCap:  gasFeeCap,
+		GasTipCap:  tip,
+		Gas:        uint64(txData.Gas),
+		To:         txData.To,
+		Value:      value,
+		Data:       txData.Input,
+		AccessList: txData.AccessList,
+	}
+
+	// Set signature values (may be 0 for native AA transactions)
+	v := big.NewInt(0)
+	r := big.NewInt(0)
+	s := big.NewInt(0)
+	if txData.V != nil {
+		v = txData.V.ToInt()
+	}
+	if txData.R != nil {
+		r = txData.R.ToInt()
+	}
+	if txData.S != nil {
+		s = txData.S.ToInt()
+	}
+
+	// Create the transaction with Type 5 by using types.NewTx with a custom wrapper
+	// Since go-ethereum doesn't support Type 5, we create a Type 2 transaction first
+	// The type field will be set correctly when marshaling
+	tx := types.NewTx(inner)
+
+	// Re-sign with the provided signature values (or zeros for AA)
+	if v.Sign() != 0 || r.Sign() != 0 || s.Sign() != 0 {
+		tx, _ = tx.WithSignature(types.NewLondonSigner(chainID), append(
+			append(r.Bytes(), s.Bytes()...),
+			byte(v.Int64()-27),
+		))
+	}
+
+	return tx, txData.From, originalHash, nil
 }

@@ -206,13 +206,51 @@ func (ctx *txProcessingContext) processTransaction(
 	}
 
 	txHash := tx.Hash()
+	// For Type 5 transactions, the computed hash differs from the original hash.
+	// Use the original hash from the mapping if available.
+	originalTxHash := txHash
+	if ctx.blockData.Type5OriginalHashes != nil {
+		if origHash, ok := ctx.blockData.Type5OriginalHashes[txHash]; ok {
+			originalTxHash = origHash
+		}
+	}
+
+	// Get the correct transaction type.
+	// For Type 5 transactions, tx.Type() returns 2 (DynamicFee) because go-ethereum
+	// doesn't support Type 5. So we need to get the original type from Type5Types.
+	txType := tx.Type()
+	if ctx.blockData.Type5Types != nil {
+		if origType, ok := ctx.blockData.Type5Types[originalTxHash]; ok {
+			txType = origType
+		}
+	}
+
 	chainID := tx.ChainId()
 	if chainID.Cmp(big.NewInt(0)) == 0 {
 		chainID = nil
 	}
+
+	// Try to get sender from signature
 	from, err := types.Sender(types.LatestSignerForChainID(chainID), tx)
 	if err != nil {
-		return nil, err
+		// For Type 5 (native AA) transactions, signature recovery fails because v,r,s are 0.
+		// In this case, use the From address from call trace or stored Type5FromAddresses.
+		// Note: Type5FromAddresses uses the original hash as key, not the computed hash.
+		lookupHash := originalTxHash
+
+		// Try call trace first
+		if callTrace != nil {
+			from = callTrace.From
+		} else if ctx.blockData.Type5FromAddresses != nil {
+			// Try stored Type5FromAddresses using the lookup hash (original hash)
+			if addr, ok := ctx.blockData.Type5FromAddresses[lookupHash]; ok {
+				from = addr
+			} else {
+				return nil, err
+			}
+		} else {
+			return nil, err
+		}
 	}
 
 	// 1. First ensure "from" account exists (no funder for sender)
@@ -265,7 +303,7 @@ func (ctx *txProcessingContext) processTransaction(
 
 	result.transaction = &dbtypes.ElTransaction{
 		BlockUid:    ctx.block.BlockUID,
-		TxHash:      txHash[:],
+		TxHash:      originalTxHash[:],
 		FromID:      fromAccount.id,
 		ToID:        toAccount.id,
 		Nonce:       txNonce,
@@ -279,7 +317,7 @@ func (ctx *txProcessingContext) processTransaction(
 		TipPrice:    tipPrice,
 		BlobCount:   blobCount,
 		BlockNumber: receipt.BlockNumber.Uint64(),
-		TxType:      tx.Type(),
+		TxType:      txType,
 		TxIndex:     uint32(receipt.TransactionIndex),
 		EffGasPrice: effGasPrice,
 	}

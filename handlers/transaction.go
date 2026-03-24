@@ -39,6 +39,7 @@ var txTypeNames = map[uint8]string{
 	2: "Dynamic Fee (EIP-1559)",
 	3: "Blob (EIP-4844)",
 	4: "Set Code (EIP-7702)",
+	5: "Native AA",
 }
 
 // Transaction handles the /tx/{hash} page
@@ -450,12 +451,12 @@ func buildTransactionPageDataFromEL(ctx context.Context, pageData *models.Transa
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	// Try to fetch transaction from EL client
+	txHashCommon := common.BytesToHash(txHash)
+
+	// Try to fetch transaction from EL client using go-ethereum first
 	var ethTx *ethtypes.Transaction
 	var isPending bool
 	var err error
-
-	txHashCommon := common.BytesToHash(txHash)
 
 	for _, client := range clients {
 		rpcClient := client.GetRPCClient()
@@ -474,7 +475,87 @@ func buildTransactionPageDataFromEL(ctx context.Context, pageData *models.Transa
 		}
 	}
 
+	// If go-ethereum failed (likely Type 5 or other unsupported type), try raw JSON-RPC
 	if ethTx == nil {
+		for _, client := range clients {
+			rpcClient := client.GetRPCClient()
+			if rpcClient == nil {
+				continue
+			}
+
+			txDetail, err := rpcClient.GetTransactionByHash(ctx, txHashCommon)
+			if err == nil && txDetail != nil {
+				// Build page data from raw JSON-RPC result
+				pageData.ViewMode = models.TxViewModePartial
+				pageData.TxType = uint8(txDetail.Type)
+				if name, ok := txTypeNames[uint8(txDetail.Type)]; ok {
+					pageData.TxTypeName = name
+				} else {
+					pageData.TxTypeName = fmt.Sprintf("Type %d", txDetail.Type)
+				}
+
+				pageData.Nonce = txDetail.Nonce
+				pageData.GasLimit = txDetail.Gas
+
+				// Value
+				if txDetail.Value != nil {
+					bigFloat := new(big.Float).SetInt(txDetail.Value)
+					bigFloat.Quo(bigFloat, big.NewFloat(1e18))
+					valueFloat, _ := bigFloat.Float64()
+					pageData.Amount = valueFloat
+					pageData.AmountRaw = txDetail.Value.Bytes()
+				}
+
+				// Gas price
+				if txDetail.GasPrice != nil {
+					gasPriceFloat, _ := new(big.Float).SetInt(txDetail.GasPrice).Float64()
+					pageData.GasPrice = gasPriceFloat / 1e9
+				}
+
+				// From address (from JSON-RPC directly)
+				pageData.FromAddr = txDetail.From.Bytes()
+
+				// To address
+				if txDetail.To != nil {
+					pageData.ToAddr = txDetail.To.Bytes()
+					pageData.HasTo = true
+				} else {
+					pageData.IsCreate = true
+				}
+
+				// Input data
+				pageData.InputData = txDetail.Input
+				methodID := []byte(nil)
+				if len(txDetail.Input) >= 4 {
+					methodID = txDetail.Input[:4]
+				}
+				applyCallTargetResolution(ctx, pageData, methodID)
+
+				// Generate JSON representation
+				txJSONMap := map[string]interface{}{
+					"type":  fmt.Sprintf("0x%x", txDetail.Type),
+					"from":  txDetail.From.Hex(),
+					"gas":   fmt.Sprintf("0x%x", txDetail.Gas),
+					"hash":  txDetail.Hash.Hex(),
+					"input": "0x" + hex.EncodeToString(txDetail.Input),
+					"nonce": fmt.Sprintf("0x%x", txDetail.Nonce),
+				}
+				if txDetail.To != nil {
+					txJSONMap["to"] = txDetail.To.Hex()
+				}
+				if txDetail.Value != nil {
+					txJSONMap["value"] = "0x" + hex.EncodeToString(txDetail.Value.Bytes())
+				}
+				if txDetail.ChainID != nil {
+					txJSONMap["chainId"] = "0x" + hex.EncodeToString(txDetail.ChainID.Bytes())
+				}
+				if jsonBytes, err := json.Marshal(txJSONMap); err == nil {
+					pageData.TxJSON = string(jsonBytes)
+				}
+
+				return true
+			}
+		}
 		return false
 	}
 

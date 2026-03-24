@@ -22,6 +22,7 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/ethpandaops/dora/blockdb"
+	"github.com/ethpandaops/dora/clients/execution/rpc"
 	"github.com/ethpandaops/dora/db"
 	"github.com/ethpandaops/dora/dbtypes"
 	"github.com/ethpandaops/dora/indexer/beacon"
@@ -871,6 +872,14 @@ func getSlotPageBlockData(ctx context.Context, blockData *services.CombinedBlock
 						}
 						pageData.TransactionsCount = uint64(blockInfo.Transactions)
 
+						// Fetch transaction bytes from EL for Gloas/Heze blocks
+						if blockInfo.Transactions > 0 {
+							txDetails, err := execClient.GetRPCClient().GetBlockTransactionsByHash(ctx, elBlockHash)
+							if err == nil && len(txDetails) > 0 {
+								getSlotPageTransactionsFromEL(ctx, pageData, txDetails)
+							}
+						}
+
 						// Get blob gas info from EL block
 						// Note: BlobGasUsed and ExcessBlobGas are not in BlockInfo, need to fetch from full block
 						// For now, we skip blob gas info for Gloas/Heze blocks in slot page
@@ -945,6 +954,7 @@ var slotTxTypeNames = map[uint8]string{
 	2: "EIP-1559",
 	3: "Blob",
 	4: "EIP-7702",
+	5: "Native AA",
 }
 
 func getSlotPageTransactions(ctx context.Context, pageData *models.SlotPageBlockData, transactions []bellatrix.Transaction, blockUid uint64) {
@@ -1031,6 +1041,12 @@ func getSlotPageTransactions(ctx context.Context, pageData *models.SlotPageBlock
 	}
 	pageData.TransactionsCount = uint64(len(transactions))
 
+	logrus.WithFields(logrus.Fields{
+		"blockRoot":         fmt.Sprintf("%x", pageData.BlockRoot),
+		"transactionsAdded": len(pageData.Transactions),
+		"transactionsCount": pageData.TransactionsCount,
+	}).Debug("getSlotPageTransactions completed")
+
 	if len(sigLookupBytes) > 0 {
 		sigLookups := services.GlobalTxSignaturesService.LookupSignatures(ctx, sigLookupBytes)
 		for _, sigLookup := range sigLookups {
@@ -1068,6 +1084,57 @@ func getSlotPageTransactions(ctx context.Context, pageData *models.SlotPageBlock
 				}
 			}
 		}
+	}
+}
+
+// getSlotPageTransactionsFromEL processes transactions fetched from EL for Gloas/Heze blocks.
+// Unlike getSlotPageTransactions which uses RLP-encoded bytes, this uses pre-parsed TransactionDetail.
+func getSlotPageTransactionsFromEL(ctx context.Context, pageData *models.SlotPageBlockData, txDetails []rpc.TransactionDetail) {
+	pageData.Transactions = make([]*models.SlotPageTransaction, 0, len(txDetails))
+	sysContracts := services.GlobalBeaconService.GetSystemContractAddresses()
+
+	for _, tx := range txDetails {
+		// Convert value to ETH
+		var txValue float64
+		if tx.Value != nil {
+			txBigFloat := new(big.Float).SetInt(tx.Value)
+			txBigFloat.Quo(txBigFloat, new(big.Float).SetInt(utils.ETH))
+			txValue, _ = txBigFloat.Float64()
+		}
+
+		// Get type name
+		typeName := slotTxTypeNames[uint8(tx.Type)]
+		if typeName == "" {
+			typeName = fmt.Sprintf("Type %d", tx.Type)
+		}
+
+		txData := &models.SlotPageTransaction{
+			Index:    tx.Index,
+			Hash:     tx.Hash[:],
+			From:     tx.From[:],
+			Value:    txValue,
+			Data:     tx.Input,
+			Type:     tx.Type,
+			TypeName: typeName,
+			GasLimit: tx.Gas,
+		}
+		txData.DataLen = uint64(len(txData.Data))
+
+		if tx.To != nil {
+			txData.To = (*tx.To)[:]
+		}
+
+		// Check call fn signature
+		isCreate := tx.To == nil
+		if txData.DataLen >= 4 {
+			// Skip fn signature lookup for deployments, precompiles, and system contracts
+			if skip, altName := utils.ShouldSkipSignatureLookup(txData.To, isCreate, sysContracts); skip {
+				txData.FuncSigStatus = 10
+				txData.FuncName = altName
+			}
+		}
+
+		pageData.Transactions = append(pageData.Transactions, txData)
 	}
 }
 

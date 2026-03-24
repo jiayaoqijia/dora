@@ -42,6 +42,20 @@ type blockData struct {
 	// State diffs per transaction (Mode Full + tracesEnabled only, nil otherwise).
 	// Indexed by position matching Transactions slice.
 	StateDiffResults []exerpc.StateDiffResult
+
+	// Type5FromAddresses stores From addresses for Type 5 (native AA) transactions.
+	// Key: transaction hash, Value: From address
+	Type5FromAddresses map[common.Hash]common.Address
+
+	// Type5OriginalHashes stores the original hash for Type 5 transactions.
+	// Key: computed hash (from types.NewTx), Value: original hash from JSON-RPC
+	// This is needed because go-ethereum computes a different hash for Type 5 txs
+	// (it treats them as Type 2), so we need to map back to the original hash.
+	Type5OriginalHashes map[common.Hash]common.Hash
+
+	// Type5Types stores the original type for Type 5 transactions.
+	// Key: original hash (from JSON-RPC), Value: original type (always 5 for native AA)
+	Type5Types map[common.Hash]uint8
 }
 
 // processing stats
@@ -157,11 +171,21 @@ func (t *TxIndexer) processElBlock(ref *BlockRef) (*blockStats, error) {
 	receiptIdx := 0
 	dbCommitCallbacks := make([]dbCommitCallback, 0, len(data.Transactions))
 	for _, tx := range data.Transactions {
+		// Get the hash to use for matching receipt
+		// For Type 5 transactions, the computed hash differs from the original hash,
+		// so we need to use the original hash from the mapping
+		txHash := tx.Hash()
+		if data.Type5OriginalHashes != nil {
+			if originalHash, ok := data.Type5OriginalHashes[txHash]; ok {
+				txHash = originalHash
+			}
+		}
+
 		var receipt *types.Receipt
 		for receiptIdx < len(data.Receipts) {
 			receipt = data.Receipts[receiptIdx]
 
-			if receipt.TxHash == tx.Hash() {
+			if receipt.TxHash == txHash {
 				break
 			}
 			receiptIdx++
@@ -171,8 +195,9 @@ func (t *TxIndexer) processElBlock(ref *BlockRef) (*blockStats, error) {
 		}
 
 		// Look up trace for this transaction (may be nil)
-		callTrace := traceMap[tx.Hash()]
-		stateDiff := stateDiffMap[tx.Hash()]
+		// Use original hash for trace lookup since traces are indexed by original hash
+		callTrace := traceMap[txHash]
+		stateDiff := stateDiffMap[txHash]
 
 		dbCommitCallback, err := procCtx.processTransaction(tx, receipt, callTrace, stateDiff)
 		if err != nil {

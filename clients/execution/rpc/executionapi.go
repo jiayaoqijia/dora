@@ -344,3 +344,210 @@ func (ec *ExecutionClient) GetBlockInfoByHash(ctx context.Context, hash common.H
 		Transactions:  len(result.Transactions),
 	}, nil
 }
+
+// GetBlockTransactionsByHash fetches transaction details from an EL block.
+// Returns a slice of TransactionDetail for rendering.
+// This is used for Gloas/Heze blocks where transactions are not available in the beacon block.
+func (ec *ExecutionClient) GetBlockTransactionsByHash(ctx context.Context, hash common.Hash) ([]TransactionDetail, error) {
+	// Use raw JSON-RPC to get block with full transaction objects
+	var result struct {
+		Transactions []jsonTxDetail `json:"transactions"`
+	}
+	err := ec.rpcClient.CallContext(ctx, &result, "eth_getBlockByHash", hash.Hex(), true)
+	if err != nil {
+		return nil, fmt.Errorf("eth_getBlockByHash failed: %w", err)
+	}
+
+	transactions := make([]TransactionDetail, 0, len(result.Transactions))
+	for i, tx := range result.Transactions {
+		detail := TransactionDetail{
+			Index: uint64(i),
+		}
+		
+		// Parse hash
+		if len(tx.Hash) > 2 {
+			hashBytes, _ := hex.DecodeString(tx.Hash[2:])
+			if len(hashBytes) == 32 {
+				detail.Hash = common.BytesToHash(hashBytes)
+			}
+		}
+		
+		// Parse from
+		if len(tx.From) > 2 {
+			fromBytes, _ := hex.DecodeString(tx.From[2:])
+			detail.From = common.BytesToAddress(fromBytes)
+		}
+		
+		// Parse to
+		if tx.To != nil && len(*tx.To) > 2 {
+			toBytes, _ := hex.DecodeString((*tx.To)[2:])
+			toAddr := common.BytesToAddress(toBytes)
+			detail.To = &toAddr
+		}
+		
+		// Parse value
+		if len(tx.Value) > 2 {
+			detail.Value = new(big.Int)
+			detail.Value.SetString(tx.Value[2:], 16)
+		}
+		
+		// Parse gas
+		if len(tx.Gas) > 2 {
+			gasVal, _ := new(big.Int).SetString(tx.Gas[2:], 16)
+			if gasVal != nil {
+				detail.Gas = gasVal.Uint64()
+			}
+		}
+		
+		// Parse input
+		if len(tx.Input) > 2 {
+			detail.Input, _ = hex.DecodeString(tx.Input[2:])
+		}
+		
+		// Parse type
+		if len(tx.Type) > 2 {
+			typeVal, _ := new(big.Int).SetString(tx.Type[2:], 16)
+			if typeVal != nil {
+				detail.Type = typeVal.Uint64()
+			}
+		}
+		
+		// Parse chainId
+		if len(tx.ChainID) > 2 {
+			detail.ChainID = new(big.Int)
+			detail.ChainID.SetString(tx.ChainID[2:], 16)
+		}
+		
+		// Parse nonce
+		if len(tx.Nonce) > 2 {
+			nonceVal, _ := new(big.Int).SetString(tx.Nonce[2:], 16)
+			if nonceVal != nil {
+				detail.Nonce = nonceVal.Uint64()
+			}
+		}
+		
+		// Parse gasPrice
+		if len(tx.GasPrice) > 2 {
+			detail.GasPrice = new(big.Int)
+			detail.GasPrice.SetString(tx.GasPrice[2:], 16)
+		}
+		
+		transactions = append(transactions, detail)
+	}
+
+	return transactions, nil
+}
+
+// TransactionDetail represents transaction details from EL JSON-RPC response
+type TransactionDetail struct {
+	Index    uint64
+	Hash     common.Hash
+	From     common.Address
+	To       *common.Address
+	Value    *big.Int
+	Gas      uint64
+	Input    []byte
+	Type     uint64
+	ChainID  *big.Int
+	Nonce    uint64
+	GasPrice *big.Int
+}
+
+// GetTransactionByHash fetches a single transaction by hash using raw JSON-RPC.
+// This supports all transaction types including Type 5 (native AA) which go-ethereum doesn't support.
+func (ec *ExecutionClient) GetTransactionByHash(ctx context.Context, hash common.Hash) (*TransactionDetail, error) {
+	var tx jsonTxDetail
+	err := ec.rpcClient.CallContext(ctx, &tx, "eth_getTransactionByHash", hash.Hex())
+	if err != nil {
+		return nil, fmt.Errorf("eth_getTransactionByHash failed: %w", err)
+	}
+	if tx.Hash == "" {
+		return nil, fmt.Errorf("transaction not found")
+	}
+
+	detail := &TransactionDetail{}
+
+	// Parse hash
+	if len(tx.Hash) > 2 {
+		hashBytes, _ := hex.DecodeString(tx.Hash[2:])
+		if len(hashBytes) == 32 {
+			detail.Hash = common.BytesToHash(hashBytes)
+		}
+	}
+
+	// Parse from
+	if len(tx.From) > 2 {
+		fromBytes, _ := hex.DecodeString(tx.From[2:])
+		detail.From = common.BytesToAddress(fromBytes)
+	}
+
+	// Parse to
+	if tx.To != nil && len(*tx.To) > 2 {
+		toBytes, _ := hex.DecodeString((*tx.To)[2:])
+		toAddr := common.BytesToAddress(toBytes)
+		detail.To = &toAddr
+	}
+
+	// Parse value
+	if len(tx.Value) > 2 {
+		detail.Value = new(big.Int)
+		detail.Value.SetString(tx.Value[2:], 16)
+	}
+
+	// Parse gas
+	if len(tx.Gas) > 2 {
+		gasVal, _ := new(big.Int).SetString(tx.Gas[2:], 16)
+		if gasVal != nil {
+			detail.Gas = gasVal.Uint64()
+		}
+	}
+
+	// Parse input
+	if len(tx.Input) > 2 {
+		detail.Input, _ = hex.DecodeString(tx.Input[2:])
+	}
+
+	// Parse type
+	if len(tx.Type) > 2 {
+		typeVal, _ := new(big.Int).SetString(tx.Type[2:], 16)
+		if typeVal != nil {
+			detail.Type = typeVal.Uint64()
+		}
+	}
+
+	// Parse chainId
+	if len(tx.ChainID) > 2 {
+		detail.ChainID = new(big.Int)
+		detail.ChainID.SetString(tx.ChainID[2:], 16)
+	}
+
+	// Parse nonce
+	if len(tx.Nonce) > 2 {
+		nonceVal, _ := new(big.Int).SetString(tx.Nonce[2:], 16)
+		if nonceVal != nil {
+			detail.Nonce = nonceVal.Uint64()
+		}
+	}
+
+	// Parse gasPrice
+	if len(tx.GasPrice) > 2 {
+		detail.GasPrice = new(big.Int)
+		detail.GasPrice.SetString(tx.GasPrice[2:], 16)
+	}
+
+	return detail, nil
+}
+
+// jsonTxDetail represents a transaction in JSON-RPC response
+type jsonTxDetail struct {
+	Hash     string  `json:"hash"`
+	From     string  `json:"from"`
+	To       *string `json:"to"`
+	Value    string  `json:"value"`
+	Gas      string  `json:"gas"`
+	Input    string  `json:"input"`
+	Type     string  `json:"type"`
+	ChainID  string  `json:"chainId"`
+	Nonce    string  `json:"nonce"`
+	GasPrice string  `json:"gasPrice"`
+}

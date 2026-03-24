@@ -135,6 +135,7 @@ func buildNetworkForks(chainState *consensus.ChainState) []*APINetworkForkInfo {
 	addConsensusFork("Deneb", specs.DenebForkEpoch, specs.DenebForkVersion)
 	addConsensusFork("Electra", specs.ElectraForkEpoch, specs.ElectraForkVersion)
 	addConsensusFork("Fulu", specs.FuluForkEpoch, specs.FuluForkVersion)
+	addConsensusFork("Gloas", specs.GloasForkEpoch, specs.GloasForkVersion)
 
 	// Add Heze fork (EIP-7805 FOCIL)
 	// Support both HEZE_FORK_EPOCH and EIP7805_FORK_EPOCH naming

@@ -174,6 +174,20 @@ func (sm *SnooperManager) GetCache() *ExecutionTimeCache {
 	return sm.cache
 }
 
+// GetExecutionClients returns all execution clients managed by this snooper manager
+func (sm *SnooperManager) GetExecutionClients() []*execution.Client {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+
+	clients := make([]*execution.Client, 0, len(sm.clients))
+	for _, clientInfo := range sm.clients {
+		if clientInfo.execution != nil {
+			clients = append(clients, clientInfo.execution)
+		}
+	}
+	return clients
+}
+
 // ExecutionTimeEvent represents a block execution time event
 type ExecutionTimeEvent struct {
 	BlockHash     common.Hash

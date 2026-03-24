@@ -291,6 +291,24 @@ func buildIndexPageData(ctx context.Context) (*models.IndexPageData, time.Durati
 		})
 	}
 
+	// Add Gloas fork (EIP-7732 ePBS)
+	if specs.GloasForkEpoch != nil && *specs.GloasForkEpoch < uint64(18446744073709551615) {
+		currentBlobParams := &consensus.BlobScheduleEntry{
+			Epoch:            *specs.ElectraForkEpoch,
+			MaxBlobsPerBlock: specs.MaxBlobsPerBlockElectra,
+		}
+		forkDigest := chainState.GetForkDigest(specs.GloasForkVersion, currentBlobParams)
+		pageData.NetworkForks = append(pageData.NetworkForks, &models.IndexPageDataForks{
+			Name:       "Gloas",
+			Epoch:      *specs.GloasForkEpoch,
+			Version:    specs.GloasForkVersion[:],
+			Time:       uint64(chainState.EpochToTime(phase0.Epoch(*specs.GloasForkEpoch)).Unix()),
+			Active:     uint64(currentEpoch) >= *specs.GloasForkEpoch,
+			Type:       "consensus",
+			ForkDigest: forkDigest[:],
+		})
+	}
+
 	// Add Heze fork (EIP-7805 FOCIL)
 	// Support both HEZE_FORK_EPOCH and EIP7805_FORK_EPOCH naming
 	hezeForkEpoch := specs.HezeForkEpoch

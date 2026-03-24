@@ -9,6 +9,7 @@ import (
 	"github.com/attestantio/go-eth2-client/spec/capella"
 	"github.com/attestantio/go-eth2-client/spec/electra"
 	"github.com/attestantio/go-eth2-client/spec/phase0"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethpandaops/dora/clients/consensus"
 	"github.com/ethpandaops/dora/db"
 	"github.com/ethpandaops/dora/dbtypes"
@@ -268,6 +269,28 @@ func (dbw *dbWriter) buildDbBlock(block *Block, epochStats *EpochStats, override
 		executionBlockNumber, _ = executionPayload.BlockNumber()
 		executionTransactions, _ = executionPayload.Transactions()
 		executionWithdrawals, _ = executionPayload.Withdrawals()
+	}
+
+	// For Gloas/Heze blocks, execution payload is not in the block body.
+	// Try to get block hash from the execution payload bid and fetch block number from EL.
+	if executionPayload == nil && dbw.indexer.executionTimeProvider != nil {
+		executionBlockHash, _ = blockBody.ExecutionBlockHash()
+		if executionBlockHash != (phase0.Hash32{}) {
+			// Try to get block number from execution client
+			execClients := dbw.indexer.executionTimeProvider.GetExecutionClients()
+			for _, execClient := range execClients {
+				if execClient == nil {
+					continue
+				}
+				var blockHash common.Hash
+				copy(blockHash[:], executionBlockHash[:])
+				header, err := execClient.GetRPCClient().GetHeaderByHash(dbw.indexer.ctx, blockHash)
+				if err == nil && header != nil && header.Number != nil {
+					executionBlockNumber = header.Number.Uint64()
+					break
+				}
+			}
+		}
 	}
 
 	var depositRequests []*electra.DepositRequest

@@ -23,12 +23,18 @@ type ExecutionTimeData interface {
 // ExecutionTimeProvider is an interface for getting execution times from cache
 type ExecutionTimeProvider interface {
 	GetAndDeleteExecutionTimes(blockHash common.Hash) []ExecutionTimeData
+	// GetExecutionClients returns all execution clients (for fetching block info from EL)
+	GetExecutionClients() []*execution.Client
 }
 
 // NoOpExecutionTimeProvider is a no-op implementation
 type NoOpExecutionTimeProvider struct{}
 
 func (n *NoOpExecutionTimeProvider) GetAndDeleteExecutionTimes(blockHash common.Hash) []ExecutionTimeData {
+	return nil
+}
+
+func (n *NoOpExecutionTimeProvider) GetExecutionClients() []*execution.Client {
 	return nil
 }
 

@@ -10,13 +10,22 @@ import (
 
 // ExecutionTimeProviderImpl implements the ExecutionTimeProvider interface
 type ExecutionTimeProviderImpl struct {
-	cache *ExecutionTimeCache
+	cache          *ExecutionTimeCache
+	snooperManager *SnooperManager
 }
 
 // NewExecutionTimeProvider creates a new execution time provider
 func NewExecutionTimeProvider(cache *ExecutionTimeCache) *ExecutionTimeProviderImpl {
 	return &ExecutionTimeProviderImpl{
 		cache: cache,
+	}
+}
+
+// NewExecutionTimeProviderWithManager creates a new execution time provider with snooper manager access
+func NewExecutionTimeProviderWithManager(cache *ExecutionTimeCache, sm *SnooperManager) *ExecutionTimeProviderImpl {
+	return &ExecutionTimeProviderImpl{
+		cache:          cache,
+		snooperManager: sm,
 	}
 }
 
@@ -53,4 +62,13 @@ func (p *ExecutionTimeProviderImpl) GetAndDeleteExecutionTimes(blockHash common.
 	}
 
 	return result
+}
+
+// GetExecutionClients returns all execution clients from the snooper manager
+func (p *ExecutionTimeProviderImpl) GetExecutionClients() []*execution.Client {
+	if p.snooperManager == nil {
+		return nil
+	}
+
+	return p.snooperManager.GetExecutionClients()
 }

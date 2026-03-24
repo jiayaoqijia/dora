@@ -310,6 +310,14 @@ func (dbw *dbWriter) buildDbBlock(block *Block, epochStats *EpochStats, override
 					executionGasLimit = blockInfo.GasLimit
 					// Get fee recipient (coinbase)
 					executionFeeRecipient = blockInfo.Coinbase
+					// Update blockIndex for epoch aggregation
+					blockIndex := block.GetBlockIndex(dbw.indexer.ctx)
+					if blockIndex != nil {
+						blockIndex.EthTransactionCount = uint64(blockInfo.Transactions)
+						blockIndex.GasUsed = blockInfo.GasUsed
+						blockIndex.GasLimit = blockInfo.GasLimit
+						blockIndex.ExecutionNumber = executionBlockNumber
+					}
 					break
 				}
 			}

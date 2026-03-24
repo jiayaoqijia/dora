@@ -48,6 +48,7 @@ func Slot(w http.ResponseWriter, r *http.Request) {
 		"slot/deposit_requests.html",
 		"slot/withdrawal_requests.html",
 		"slot/consolidation_requests.html",
+		"slot/inclusion_lists.html",
 	)
 	var notfoundTemplateFiles = append(layoutTemplateFiles,
 		"slot/notfound.html",
@@ -944,6 +945,11 @@ func getSlotPageBlockData(ctx context.Context, blockData *services.CombinedBlock
 		getSlotPageConsolidationRequests(pageData, requests.Consolidations)
 	}
 
+	// Process Inclusion List data for Heze fork blocks (FOCIL - EIP-7805)
+	if blockData.Block.Version == spec.DataVersionHeze {
+		getSlotPageInclusionLists(ctx, pageData, blockData)
+	}
+
 	return pageData
 }
 
@@ -1210,4 +1216,110 @@ func getSlotPageConsolidationRequests(pageData *models.SlotPageBlockData, consol
 	}
 
 	pageData.ConsolidationRequestsCount = uint64(len(pageData.ConsolidationRequests))
+}
+
+// getSlotPageInclusionLists processes Inclusion List data for Heze fork blocks (FOCIL - EIP-7805).
+// It extracts InclusionListBits from the block's execution payload bid and retrieves
+// the ILs from the previous slot.
+func getSlotPageInclusionLists(ctx context.Context, pageData *models.SlotPageBlockData, blockData *services.CombinedBlockResponse) {
+	if blockData == nil || blockData.Block == nil || blockData.Block.Heze == nil {
+		return
+	}
+
+	hezeBlock := blockData.Block.Heze
+	if hezeBlock.Message == nil || hezeBlock.Message.Body == nil {
+		return
+	}
+
+	// Get the signed execution payload bid
+	signedBid := hezeBlock.Message.Body.SignedExecutionPayloadBid
+	if signedBid == nil || signedBid.Message == nil {
+		return
+	}
+
+	bid := signedBid.Message
+	ilBits := bid.GetInclusionListBits()
+
+	// Mark that this block has IL data
+	pageData.HasInclusionListData = true
+	pageData.InclusionListBits = ilBits[:]
+	pageData.SatisfiedILCount = ilBits.SetCount()
+
+	// Get ILs from CL API using the current block's slot
+	// The ILs included in this block were produced for the previous slot
+	blockSlot := fmt.Sprintf("%d", blockData.Header.Message.Slot)
+
+	ilData, err := services.GlobalBeaconService.GetInclusionLists(ctx, blockSlot)
+	if err != nil {
+		logrus.WithError(err).Debug("Failed to fetch inclusion lists from CL API")
+		pageData.InclusionListCount = 0
+		return
+	}
+
+	if len(ilData) == 0 {
+		pageData.InclusionListCount = 0
+		return
+	}
+
+	pageData.InclusionListCount = len(ilData)
+	pageData.InclusionLists = make([]*models.SlotPageInclusionList, 0, len(ilData))
+
+	for i, il := range ilData {
+		// Parse slot and validator index from string
+		slot, _ := strconv.ParseUint(il.Slot, 10, 64)
+		validatorIndex, _ := strconv.ParseUint(il.ValidatorIndex, 10, 64)
+
+		// Calculate total transactions size
+		var totalSize uint64
+		for _, txHex := range il.Transactions {
+			// Each transaction is hex-encoded, decode to get actual size
+			if txBytes, err := hex.DecodeString(strings.TrimPrefix(txHex, "0x")); err == nil {
+				totalSize += uint64(len(txBytes))
+			}
+		}
+
+		// Determine committee index (simplified mapping)
+		committeeIndex := i
+		isSatisfied := ilBits.IsSet(committeeIndex)
+
+		ilPageData := &models.SlotPageInclusionList{
+			Slot:                       slot,
+			ValidatorIndex:             validatorIndex,
+			ValidatorName:              services.GlobalBeaconService.GetValidatorName(validatorIndex),
+			CommitteeIndex:             committeeIndex,
+			InclusionListCommitteeRoot: []byte(il.InclusionListCommitteeRoot),
+			Signature:                  []byte(il.Signature),
+			TransactionCount:           len(il.Transactions),
+			TransactionsSize:           totalSize,
+			IsSatisfied:                isSatisfied,
+			IsEquivocated:              false, // Would need additional API call to determine
+		}
+
+		// Parse transactions
+		if len(il.Transactions) > 0 {
+			ilPageData.Transactions = make([]*models.SlotPageILTransaction, 0, len(il.Transactions))
+			for txIdx, txHex := range il.Transactions {
+				txBytes, err := hex.DecodeString(strings.TrimPrefix(txHex, "0x"))
+				if err != nil {
+					continue
+				}
+				txData := &models.SlotPageILTransaction{
+					Index: uint64(txIdx),
+					Size:  len(txBytes),
+					Data:  txBytes,
+				}
+				ilPageData.Transactions = append(ilPageData.Transactions, txData)
+			}
+		}
+
+		pageData.InclusionLists = append(pageData.InclusionLists, ilPageData)
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"blockRoot":      fmt.Sprintf("%x", pageData.BlockRoot),
+		"slot":           blockData.Header.Message.Slot,
+		"ilBits":         fmt.Sprintf("%x", ilBits[:]),
+		"satisfiedCount": pageData.SatisfiedILCount,
+		"totalILs":       pageData.InclusionListCount,
+	}).Debug("Processed Inclusion Lists for block")
 }

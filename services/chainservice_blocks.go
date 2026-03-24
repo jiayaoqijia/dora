@@ -12,6 +12,7 @@ import (
 	"github.com/attestantio/go-eth2-client/spec/phase0"
 
 	"github.com/ethpandaops/dora/blockdb"
+	"github.com/ethpandaops/dora/clients/consensus/rpc"
 	"github.com/ethpandaops/dora/db"
 	"github.com/ethpandaops/dora/dbtypes"
 	"github.com/ethpandaops/dora/indexer/beacon"
@@ -1088,4 +1089,16 @@ func (bs *ChainService) GetHighestElBlockNumber(ctx context.Context, overrideFor
 	}
 
 	return 0
+}
+
+// GetInclusionLists retrieves inclusion lists for a block from the CL API.
+// blockID can be a slot number, block root (hex), or "head"
+func (bs *ChainService) GetInclusionLists(ctx context.Context, blockID string) ([]*rpc.InclusionListData, error) {
+	// Get a ready client
+	client := bs.beaconIndexer.GetReadyClient(true)
+	if client == nil {
+		return nil, fmt.Errorf("no clients available")
+	}
+
+	return client.GetClient().GetRPCClient().GetInclusionLists(ctx, blockID)
 }

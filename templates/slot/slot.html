@@ -96,6 +96,14 @@
             <a class="nav-link" id="consolidationRequests-tab" data-bs-toggle="tab" href="#consolidationRequests" role="tab" aria-controls="consolidationRequests" aria-selected="false">Consolidation Requests <span class="badge bg-secondary text-white">{{ .Block.ConsolidationRequestsCount }}</span></a>
           </li>
         {{ end }}
+        {{ if .Block.HasInclusionListData }}
+          <li class="nav-item">
+            <a class="nav-link" id="inclusionLists-tab" data-bs-toggle="tab" href="#inclusionLists" role="tab" aria-controls="inclusionLists" aria-selected="false">
+              Inclusion Lists
+              <span class="badge bg-secondary text-white">{{ .Block.InclusionListCount }}</span>
+            </a>
+          </li>
+        {{ end }}
         {{ if .Block }}
           <li class="nav-item ms-auto">
             <a class="nav-link" id="download-tab" data-bs-toggle="tab" href="#download" role="tab" aria-controls="download" aria-selected="false" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Download">
@@ -256,6 +264,19 @@
               </div>
             </div>
             {{ template "block_consolidation_requests" . }}
+          </div>
+        {{ end }}
+        {{ if .Block.HasInclusionListData }}
+          <div class="tab-pane fade" id="inclusionLists" role="tabpanel" aria-labelledby="inclusionLists-tab">
+            <div class="card block-card">
+              <div class="card-header">
+                <h5 class="mb-0">
+                  <i class="fas fa-list-check me-2"></i>
+                  Inclusion Lists (FOCIL - EIP-7805)
+                </h5>
+              </div>
+              {{ template "block_inclusion_lists" . }}
+            </div>
           </div>
         {{ end }}
         {{ if .Block }}

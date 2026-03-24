@@ -57,6 +57,7 @@ type Indexer struct {
 	pubkeyCache       *pubkeyCache
 	validatorCache    *validatorCache
 	validatorActivity *validatorActivityCache
+	ilIndexer         *InclusionListIndexer // Inclusion List indexer (FOCIL - EIP-7805)
 
 	// indexer state
 	clients               []*Client
@@ -129,6 +130,7 @@ func NewIndexer(ctx context.Context, logger logrus.FieldLogger, consensusPool *c
 	indexer.validatorCache = newValidatorCache(indexer)
 	indexer.validatorActivity = newValidatorActivityCache(indexer)
 	indexer.dbWriter = newDbWriter(indexer)
+	indexer.ilIndexer = NewInclusionListIndexer(indexer, logger.WithField("module", "il-indexer"))
 
 	badChainRoots := utils.Config.Indexer.BadChainRoots
 	if len(badChainRoots) > 0 {

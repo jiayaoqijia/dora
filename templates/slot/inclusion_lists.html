@@ -1,0 +1,106 @@
+{{ define "block_inclusion_lists" }}
+<div class="card-body px-0 py-1">
+  {{ if .Block.InclusionLists }}
+    <div class="table-responsive">
+      <table class="table table-sm table-hover align-middle mb-0">
+        <thead>
+          <tr>
+            <th style="width: 5%;">#</th>
+            <th style="width: 12%;">Validator</th>
+            <th style="width: 10%;">Status</th>
+            <th style="width: 10%;">Txs</th>
+            <th style="width: 8%;">Size</th>
+            <th style="width: 55%;">Info</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{ range $i, $il := .Block.InclusionLists }}
+          <tr class="{{ if $il.IsSatisfied }}table-success{{ else if $il.IsEquivocated }}table-danger{{ end }}">
+            <td>
+              <span class="badge {{ if $il.IsSatisfied }}bg-success{{ else }}bg-secondary{{ end }}">
+                {{ $il.CommitteeIndex }}
+              </span>
+            </td>
+            <td>
+              {{ if $il.ValidatorName }}
+                <a href="/validator/{{ $il.ValidatorIndex }}">{{ $il.ValidatorName }}</a>
+              {{ else }}
+                <a href="/validator/{{ $il.ValidatorIndex }}">{{ $il.ValidatorIndex }}</a>
+              {{ end }}
+            </td>
+            <td>
+              {{ if $il.IsEquivocated }}
+                <span class="badge bg-danger" data-bs-toggle="tooltip" title="Validator equivocated">
+                  <i class="fas fa-exclamation-triangle me-1"></i>Equivocated
+                </span>
+              {{ else if $il.IsSatisfied }}
+                <span class="badge bg-success" data-bs-toggle="tooltip" title="IL satisfied in block">
+                  <i class="fas fa-check-circle me-1"></i>Satisfied
+                </span>
+              {{ else }}
+                <span class="badge bg-warning" data-bs-toggle="tooltip" title="IL not satisfied">
+                  <i class="fas fa-times-circle me-1"></i>Not Satisfied
+                </span>
+              {{ end }}
+            </td>
+            <td>
+              <span class="badge bg-info">{{ $il.TransactionCount }}</span>
+            </td>
+            <td>
+              <small class="text-muted">{{ $il.TransactionsSize }} bytes</small>
+            </td>
+            <td>
+              {{ if $il.Transactions }}
+                <div class="collapse" id="il-txs-{{ $i }}">
+                  {{ range $txIdx, $tx := $il.Transactions }}
+                    <div class="p-1 border-bottom small">
+                      <span class="text-muted">#{{ $tx.Index }}</span>
+                      <span class="text-muted ms-2">{{ $tx.Size }} bytes</span>
+                    </div>
+                  {{ end }}
+                </div>
+                <button class="btn btn-sm btn-link p-0" type="button"
+                        data-bs-toggle="collapse" data-bs-target="#il-txs-{{ $i }}">
+                  Show transactions
+                </button>
+              {{ else }}
+                <span class="text-muted">-</span>
+              {{ end }}
+            </td>
+          </tr>
+          {{ end }}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Summary -->
+    <div class="p-3 mt-2 bg-light border-top">
+      <div class="row">
+        <div class="col-md-4">
+          <strong>Inclusion List Bits:</strong>
+          <code class="ms-2">0x{{ printf "%x" .Block.InclusionListBits }}</code>
+        </div>
+        <div class="col-md-4">
+          <strong>Satisfied:</strong>
+          <span class="badge {{ if gt .Block.SatisfiedILCount 0 }}bg-success{{ else }}bg-secondary{{ end }} ms-2">
+            {{ .Block.SatisfiedILCount }} / {{ .Block.InclusionListCount }}
+          </span>
+        </div>
+        <div class="col-md-4">
+          <strong>Committee Size:</strong>
+          <span class="ms-2">16 validators</span>
+        </div>
+      </div>
+    </div>
+  {{ else }}
+    <div class="p-4 text-center text-muted">
+      <i class="fas fa-info-circle me-2"></i>
+      No inclusion lists received for this slot
+      <br>
+      <small class="text-muted mt-2 d-block">
+        Inclusion Lists are produced by the IL committee for the previous slot.
+      </small>
+    </div>
+  {{ end }}
+</div>
+{{ end }}

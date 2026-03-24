@@ -505,3 +505,9 @@ func (indexer *Indexer) GetFullValidatorByIndex(validatorIndex phase0.ValidatorI
 
 	return validatorData
 }
+
+// GetInclusionListIndexer returns the Inclusion List indexer (FOCIL - EIP-7805).
+// Returns nil if IL indexing is not available.
+func (indexer *Indexer) GetInclusionListIndexer() *InclusionListIndexer {
+	return indexer.ilIndexer
+}

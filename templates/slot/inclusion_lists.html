@@ -5,19 +5,19 @@
       <table class="table table-sm table-hover align-middle mb-0">
         <thead>
           <tr>
-            <th style="width: 5%;">#</th>
-            <th style="width: 12%;">Validator</th>
-            <th style="width: 10%;">Status</th>
-            <th style="width: 10%;">Txs</th>
-            <th style="width: 8%;">Size</th>
-            <th style="width: 55%;">Info</th>
+            <th class="border-0" style="width: 5%;">#</th>
+            <th class="border-0" style="width: 12%;">Validator</th>
+            <th class="border-0" style="width: 10%;">Status</th>
+            <th class="border-0" style="width: 10%;">Txs</th>
+            <th class="border-0" style="width: 8%;">Size</th>
+            <th class="border-0" style="width: 55%;">Info</th>
           </tr>
         </thead>
         <tbody>
           {{ range $i, $il := .Block.InclusionLists }}
-          <tr class="{{ if $il.IsSatisfied }}table-success{{ else if $il.IsEquivocated }}table-danger{{ end }}">
+          <tr>
             <td>
-              <span class="badge {{ if $il.IsSatisfied }}bg-success{{ else }}bg-secondary{{ end }}">
+              <span class="badge rounded-pill text-bg-secondary" style="font-size: 12px; font-weight: 500;">
                 {{ $il.CommitteeIndex }}
               </span>
             </td>
@@ -30,24 +30,24 @@
             </td>
             <td>
               {{ if $il.IsEquivocated }}
-                <span class="badge bg-danger" data-bs-toggle="tooltip" title="Validator equivocated">
+                <span class="badge text-bg-danger" style="font-size: 11px;" data-bs-toggle="tooltip" title="Validator equivocated">
                   <i class="fas fa-exclamation-triangle me-1"></i>Equivocated
                 </span>
               {{ else if $il.IsSatisfied }}
-                <span class="badge bg-success" data-bs-toggle="tooltip" title="IL satisfied in block">
-                  <i class="fas fa-check-circle me-1"></i>Satisfied
+                <span class="badge text-bg-success" style="font-size: 11px;" data-bs-toggle="tooltip" title="IL satisfied in block">
+                  <i class="fas fa-check me-1"></i>Satisfied
                 </span>
               {{ else }}
-                <span class="badge bg-warning" data-bs-toggle="tooltip" title="IL not satisfied">
-                  <i class="fas fa-times-circle me-1"></i>Not Satisfied
+                <span class="badge text-bg-warning" style="font-size: 11px;" data-bs-toggle="tooltip" title="IL not satisfied">
+                  <i class="fas fa-times me-1"></i>Not Satisfied
                 </span>
               {{ end }}
             </td>
             <td>
-              <span class="badge bg-info">{{ $il.TransactionCount }}</span>
+              <span class="badge rounded-pill text-bg-secondary" style="font-size: 12px; font-weight: 500;">{{ $il.TransactionCount }}</span>
             </td>
             <td>
-              <small class="text-muted">{{ $il.TransactionsSize }} bytes</small>
+              <span class="text-muted">{{ $il.TransactionsSize }} bytes</span>
             </td>
             <td>
               {{ if $il.Transactions }}
@@ -74,7 +74,7 @@
     </div>
 
     <!-- Summary -->
-    <div class="p-3 mt-2 bg-light border-top">
+    <div class="p-3 mt-2 border-top" style="background: var(--bs-tertiary-bg);">
       <div class="row">
         <div class="col-md-4">
           <strong>Inclusion List Bits:</strong>
@@ -82,7 +82,7 @@
         </div>
         <div class="col-md-4">
           <strong>Satisfied:</strong>
-          <span class="badge {{ if gt .Block.SatisfiedILCount 0 }}bg-success{{ else }}bg-secondary{{ end }} ms-2">
+          <span class="badge {{ if gt .Block.SatisfiedILCount 0 }}text-bg-success{{ else }}text-bg-secondary{{ end }} ms-2" style="font-size: 11px;">
             {{ .Block.SatisfiedILCount }} / {{ .Block.InclusionListCount }}
           </span>
         </div>
@@ -93,9 +93,9 @@
       </div>
     </div>
   {{ else }}
-    <div class="p-4 text-center text-muted">
-      <i class="fas fa-info-circle me-2"></i>
-      No inclusion lists received for this slot
+    <div class="p-4 text-center">
+      <i class="fas fa-info-circle me-2 text-muted"></i>
+      <span class="text-muted">No inclusion lists received for this slot</span>
       <br>
       <small class="text-muted mt-2 d-block">
         Inclusion Lists are produced by the IL committee for the previous slot.

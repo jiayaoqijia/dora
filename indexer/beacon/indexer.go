@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"runtime/debug"
+	"strconv"
 	"sync"
 	"time"
 
@@ -247,6 +248,8 @@ func (indexer *Indexer) StartIndexer() {
 	if err == nil {
 		yaml.Unmarshal(specYaml, &staticSpec)
 	}
+	// Add Gloas/Heze-specific constants that may not be in the spec response
+	addGloasSpecConstants(staticSpec)
 	indexer.dynSsz = dynssz.NewDynSsz(staticSpec)
 
 	// initialize synchronizer & restore state
@@ -524,6 +527,48 @@ func (indexer *Indexer) runIndexerLoop() {
 				indexer.lastPruneRunEpoch = epoch
 			}
 
+		}
+	}
+}
+
+// addGloasSpecConstants adds Gloas/Heze-specific constants to the specs map.
+// These constants are required for proper SSZ decoding but may not be exposed
+// by the CL client's /eth/v1/config/spec API.
+func addGloasSpecConstants(specs map[string]any) {
+	// Builder registry limit (2^40)
+	if _, ok := specs["BUILDER_REGISTRY_LIMIT"]; !ok {
+		specs["BUILDER_REGISTRY_LIMIT"] = uint64(1099511627776)
+	}
+	// Builder pending payments limit (64 for mainnet, derived from 2 * SLOTS_PER_EPOCH)
+	if _, ok := specs["BUILDER_PENDING_PAYMENTS_LIMIT"]; !ok {
+		if slotsPerEpoch, ok := specs["SLOTS_PER_EPOCH"].(string); ok {
+			if slots, err := strconv.ParseUint(slotsPerEpoch, 10, 64); err == nil {
+				specs["BUILDER_PENDING_PAYMENTS_LIMIT"] = 2 * slots
+			} else {
+				specs["BUILDER_PENDING_PAYMENTS_LIMIT"] = uint64(64)
+			}
+		} else if slotsPerEpoch, ok := specs["SLOTS_PER_EPOCH"].(uint64); ok {
+			specs["BUILDER_PENDING_PAYMENTS_LIMIT"] = 2 * slotsPerEpoch
+		} else {
+			specs["BUILDER_PENDING_PAYMENTS_LIMIT"] = uint64(64)
+		}
+	}
+	// Builder pending withdrawals limit
+	if _, ok := specs["BUILDER_PENDING_WITHDRAWALS_LIMIT"]; !ok {
+		specs["BUILDER_PENDING_WITHDRAWALS_LIMIT"] = uint64(1048576)
+	}
+	// Proposer lookahead slots (derived from (MIN_SEED_LOOKAHEAD + 1) * SLOTS_PER_EPOCH)
+	if _, ok := specs["PROPOSER_LOOKAHEAD_SLOTS"]; !ok {
+		if slotsPerEpoch, ok := specs["SLOTS_PER_EPOCH"].(string); ok {
+			if slots, err := strconv.ParseUint(slotsPerEpoch, 10, 64); err == nil {
+				specs["PROPOSER_LOOKAHEAD_SLOTS"] = 2 * slots // MIN_SEED_LOOKAHEAD=1, so (1+1)*SLOTS_PER_EPOCH
+			} else {
+				specs["PROPOSER_LOOKAHEAD_SLOTS"] = uint64(64)
+			}
+		} else if slotsPerEpoch, ok := specs["SLOTS_PER_EPOCH"].(uint64); ok {
+			specs["PROPOSER_LOOKAHEAD_SLOTS"] = 2 * slotsPerEpoch
+		} else {
+			specs["PROPOSER_LOOKAHEAD_SLOTS"] = uint64(64)
 		}
 	}
 }

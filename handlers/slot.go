@@ -423,7 +423,7 @@ func getSlotPageBlockData(ctx context.Context, blockData *services.CombinedBlock
 		Graffiti:               graffiti[:],
 		Eth1dataDepositroot:    eth1Data.DepositRoot[:],
 		Eth1dataDepositcount:   eth1Data.DepositCount,
-		Eth1dataBlockhash:      eth1Data.BlockHash,
+		Eth1dataBlockhash:      eth1Data.BlockHash[:],
 		ValidatorNames:         make(map[uint64]string),
 		SpecValues:             make(map[string]interface{}),
 		ProposerSlashingsCount: uint64(len(proposerSlashings)),

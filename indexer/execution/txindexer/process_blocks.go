@@ -43,18 +43,18 @@ type blockData struct {
 	// Indexed by position matching Transactions slice.
 	StateDiffResults []exerpc.StateDiffResult
 
-	// Type5FromAddresses stores From addresses for Type 5 (native AA) transactions.
+	// Type5FromAddresses stores From addresses for Type 5 (native AA) and Type 6 (FrameTx) transactions.
 	// Key: transaction hash, Value: From address
 	Type5FromAddresses map[common.Hash]common.Address
 
-	// Type5OriginalHashes stores the original hash for Type 5 transactions.
+	// Type5OriginalHashes stores the original hash for Type 5 and Type 6 transactions.
 	// Key: computed hash (from types.NewTx), Value: original hash from JSON-RPC
-	// This is needed because go-ethereum computes a different hash for Type 5 txs
+	// This is needed because go-ethereum computes a different hash for these txs
 	// (it treats them as Type 2), so we need to map back to the original hash.
 	Type5OriginalHashes map[common.Hash]common.Hash
 
-	// Type5Types stores the original type for Type 5 transactions.
-	// Key: original hash (from JSON-RPC), Value: original type (always 5 for native AA)
+	// Type5Types stores the original type for Type 5 and Type 6 transactions.
+	// Key: original hash (from JSON-RPC), Value: original type (5 for native AA, 6 for FrameTx)
 	Type5Types map[common.Hash]uint8
 }
 

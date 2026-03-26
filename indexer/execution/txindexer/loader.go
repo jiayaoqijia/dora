@@ -273,6 +273,10 @@ func (t *TxIndexer) fetchBlockTransactions(
 				// Type 5 is a native AA transaction (similar structure to Type 2 DynamicFee)
 				// We'll handle it separately below
 				isValid = true
+			case 0x06:
+				// Type 6 is EIP-8141 FrameTx (similar structure to Type 2 DynamicFee with frames)
+				// We'll handle it separately below
+				isValid = true
 			}
 		}
 
@@ -298,6 +302,23 @@ func (t *TxIndexer) fetchBlockTransactions(
 			type5OriginalHashes[tx.Hash()] = originalHash
 			// Store original type (always 5 for native AA)
 			type5Types[originalHash] = 0x05
+			continue
+		}
+
+		// Handle Type 6 (EIP-8141 FrameTx) transactions separately since go-ethereum doesn't support them
+		if txHeader.Type == 0x06 {
+			tx, from, originalHash, err := t.parseType6Transaction(rawTx)
+			if err != nil {
+				t.logger.WithError(err).WithField("txIndex", idx).Debug("failed to parse Type 6 (FrameTx) transaction")
+				continue
+			}
+			transactions = append(transactions, tx)
+			// Store From address using original hash as key
+			type5FromAddresses[originalHash] = from
+			// Store mapping from computed hash to original hash
+			type5OriginalHashes[tx.Hash()] = originalHash
+			// Store original type (6 for FrameTx)
+			type5Types[originalHash] = 0x06
 			continue
 		}
 
@@ -616,6 +637,108 @@ func (t *TxIndexer) parseType5Transaction(rawTx json.RawMessage) (*types.Transac
 	tx := types.NewTx(inner)
 
 	// Re-sign with the provided signature values (or zeros for AA)
+	if v.Sign() != 0 || r.Sign() != 0 || s.Sign() != 0 {
+		tx, _ = tx.WithSignature(types.NewLondonSigner(chainID), append(
+			append(r.Bytes(), s.Bytes()...),
+			byte(v.Int64()-27),
+		))
+	}
+
+	return tx, txData.From, originalHash, nil
+}
+
+// parseType6Transaction parses a Type 6 (EIP-8141 FrameTx) transaction.
+// Type 6 has a similar structure to Type 2 (DynamicFee) but with type 0x06 and optional frames field.
+// go-ethereum doesn't natively support Type 6, so we parse it manually.
+// Returns the transaction, From address, original hash, and error.
+// Note: The returned transaction's Hash() will be different from the original hash
+// because go-ethereum computes it as Type 2. Use the returned originalHash for matching.
+func (t *TxIndexer) parseType6Transaction(rawTx json.RawMessage) (*types.Transaction, common.Address, common.Hash, error) {
+	var txData struct {
+		Hash                 *common.Hash        `json:"hash"`
+		ChainID              *hexutil.Big        `json:"chainId"`
+		Nonce                hexutil.Uint64      `json:"nonce"`
+		Gas                  hexutil.Uint64      `json:"gas"`
+		GasPrice             *hexutil.Big        `json:"gasPrice"`
+		MaxFeePerGas         *hexutil.Big        `json:"maxFeePerGas"`
+		MaxPriorityFeePerGas *hexutil.Big        `json:"maxPriorityFeePerGas"`
+		Value                *hexutil.Big        `json:"value"`
+		Input                hexutil.Bytes       `json:"input"`
+		From                 common.Address      `json:"from"`
+		To                   *common.Address     `json:"to"`
+		AccessList           types.AccessList    `json:"accessList"`
+		V                    *hexutil.Big        `json:"v"`
+		R                    *hexutil.Big        `json:"r"`
+		S                    *hexutil.Big        `json:"s"`
+		YParity              *hexutil.Uint64     `json:"yParity"`
+		Frames               json.RawMessage     `json:"frames"` // EIP-8141 frames field (preserved but not parsed)
+	}
+
+	if err := json.Unmarshal(rawTx, &txData); err != nil {
+		return nil, common.Address{}, common.Hash{}, fmt.Errorf("unmarshal Type 6 (FrameTx) tx: %w", err)
+	}
+
+	// Get original hash from JSON
+	var originalHash common.Hash
+	if txData.Hash != nil {
+		originalHash = *txData.Hash
+	}
+
+	// Build a DynamicFeeTx (Type 2) structure as a proxy for the FrameTx
+	// The frames field is preserved in the raw JSON but go-ethereum doesn't understand it
+	chainID := big.NewInt(0)
+	if txData.ChainID != nil {
+		chainID = txData.ChainID.ToInt()
+	}
+
+	value := big.NewInt(0)
+	if txData.Value != nil {
+		value = txData.Value.ToInt()
+	}
+
+	gasFeeCap := big.NewInt(0)
+	if txData.MaxFeePerGas != nil {
+		gasFeeCap = txData.MaxFeePerGas.ToInt()
+	}
+
+	tip := big.NewInt(0)
+	if txData.MaxPriorityFeePerGas != nil {
+		tip = txData.MaxPriorityFeePerGas.ToInt()
+	}
+
+	// Create the inner DynamicFeeTx
+	inner := &types.DynamicFeeTx{
+		ChainID:    chainID,
+		Nonce:      uint64(txData.Nonce),
+		GasFeeCap:  gasFeeCap,
+		GasTipCap:  tip,
+		Gas:        uint64(txData.Gas),
+		To:         txData.To,
+		Value:      value,
+		Data:       txData.Input,
+		AccessList: txData.AccessList,
+	}
+
+	// Set signature values (may be 0 for some FrameTx)
+	v := big.NewInt(0)
+	r := big.NewInt(0)
+	s := big.NewInt(0)
+	if txData.V != nil {
+		v = txData.V.ToInt()
+	}
+	if txData.R != nil {
+		r = txData.R.ToInt()
+	}
+	if txData.S != nil {
+		s = txData.S.ToInt()
+	}
+
+	// Create the transaction with Type 2 as a proxy
+	// Since go-ethereum doesn't support Type 6, we create a Type 2 transaction
+	// The original hash is preserved for correct identification
+	tx := types.NewTx(inner)
+
+	// Re-sign with the provided signature values (or zeros)
 	if v.Sign() != 0 || r.Sign() != 0 || s.Sign() != 0 {
 		tx, _ = tx.WithSignature(types.NewLondonSigner(chainID), append(
 			append(r.Bytes(), s.Bytes()...),

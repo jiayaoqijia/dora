@@ -40,6 +40,7 @@ var txTypeNames = map[uint8]string{
 	3: "Blob (EIP-4844)",
 	4: "Set Code (EIP-7702)",
 	5: "Native AA",
+	6: "FrameTx (EIP-8141)",
 }
 
 // Transaction handles the /tx/{hash} page

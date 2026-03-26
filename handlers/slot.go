@@ -17,6 +17,7 @@ import (
 	"github.com/attestantio/go-eth2-client/spec/electra"
 	"github.com/attestantio/go-eth2-client/spec/phase0"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/gorilla/mux"
 	"github.com/sirupsen/logrus"
@@ -961,6 +962,7 @@ var slotTxTypeNames = map[uint8]string{
 	3: "Blob",
 	4: "EIP-7702",
 	5: "Native AA",
+	6: "FrameTx",
 }
 
 func getSlotPageTransactions(ctx context.Context, pageData *models.SlotPageBlockData, transactions []bellatrix.Transaction, blockUid uint64) {
@@ -978,6 +980,29 @@ func getSlotPageTransactions(ctx context.Context, pageData *models.SlotPageBlock
 
 		err := tx.UnmarshalBinary(txBytes)
 		if err != nil {
+			// Check if this is a Type 5 or Type 6 transaction (not supported by go-ethereum)
+			if len(txBytes) > 0 && (txBytes[0] == 0x05 || txBytes[0] == 0x06) {
+				txType := txBytes[0]
+				typeName := slotTxTypeNames[txType]
+				if typeName == "" {
+					typeName = fmt.Sprintf("Type %d", txType)
+				}
+
+				// Extract transaction hash from the raw bytes using Keccak256
+				txHash := crypto.Keccak256(txBytes)
+
+				txData := &models.SlotPageTransaction{
+					Index:    uint64(idx),
+					Hash:     txHash,
+					Type:     uint64(txType),
+					TypeName: typeName,
+				}
+
+				pageData.Transactions = append(pageData.Transactions, txData)
+				txHashMap[string(txHash)] = txData
+				logrus.Debugf("parsed unsupported transaction type %d at index %d, hash: %x", txType, idx, txHash)
+				continue
+			}
 			logrus.Warnf("error decoding transaction 0x%x.%v: %v\n", pageData.BlockRoot, idx, err)
 			continue
 		}

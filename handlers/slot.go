@@ -17,8 +17,8 @@ import (
 	"github.com/attestantio/go-eth2-client/spec/electra"
 	"github.com/attestantio/go-eth2-client/spec/phase0"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/gorilla/mux"
 	"github.com/sirupsen/logrus"
 
@@ -1243,9 +1243,8 @@ func getSlotPageConsolidationRequests(pageData *models.SlotPageBlockData, consol
 	pageData.ConsolidationRequestsCount = uint64(len(pageData.ConsolidationRequests))
 }
 
-// getSlotPageInclusionLists processes Inclusion List data for Heze fork blocks (FOCIL - EIP-7805).
-// It extracts InclusionListBits from the block's execution payload bid and retrieves
-// the ILs from the previous slot.
+// getSlotPageInclusionLists projects a block's bid and the signed observations
+// recorded for its previous slot.
 func getSlotPageInclusionLists(ctx context.Context, pageData *models.SlotPageBlockData, blockData *services.CombinedBlockResponse) {
 	if blockData == nil || blockData.Block == nil || blockData.Block.Heze == nil {
 		return
@@ -1256,95 +1255,49 @@ func getSlotPageInclusionLists(ctx context.Context, pageData *models.SlotPageBlo
 		return
 	}
 
-	// Get the signed execution payload bid
 	signedBid := hezeBlock.Message.Body.SignedExecutionPayloadBid
 	if signedBid == nil || signedBid.Message == nil {
 		return
 	}
 
-	bid := signedBid.Message
-	ilBits := bid.GetInclusionListBits()
-
-	// Mark that this block has IL data
+	ilBits := signedBid.Message.GetInclusionListBits()
 	pageData.HasInclusionListData = true
 	pageData.InclusionListBits = ilBits[:]
-	pageData.SatisfiedILCount = ilBits.SetCount()
+	pageData.BidInclusionPositionCount = ilBits.SetCount()
 
-	// Get ILs from CL API using the current block's slot
-	// The ILs included in this block were produced for the previous slot
-	blockSlot := fmt.Sprintf("%d", blockData.Header.Message.Slot)
-
-	ilData, err := services.GlobalBeaconService.GetInclusionLists(ctx, blockSlot)
+	view, err := services.GlobalBeaconService.GetHezeInclusionView(ctx, blockData.Root, hezeBlock.Message.Slot)
 	if err != nil {
-		logrus.WithError(err).Debug("Failed to fetch inclusion lists from CL API")
-		pageData.InclusionListCount = 0
+		logrus.WithError(err).Debug("Heze inclusion view unavailable")
+		return
+	}
+	if view == nil {
 		return
 	}
 
-	if len(ilData) == 0 {
-		pageData.InclusionListCount = 0
-		return
+	pageData.InclusionViewAvailable = true
+	pageData.InclusionListCount = len(view.Lists)
+	pageData.InclusionLists = make([]*models.SlotPageInclusionList, 0, len(view.Lists))
+	for _, observed := range view.Lists {
+		msg := observed.SignedList.Message
+		positions := view.Positions(msg.ValidatorIndex)
+		inBid := false
+		for _, position := range positions {
+			inBid = inBid || ilBits.IsSet(position)
+		}
+		list := &models.SlotPageInclusionList{
+			Slot: msg.Slot, ValidatorIndex: msg.ValidatorIndex,
+			ValidatorName:      services.GlobalBeaconService.GetValidatorName(msg.ValidatorIndex),
+			CommitteePositions: positions, DependentRoot: msg.DependentRoot[:],
+			Signature:        observed.SignedList.Signature[:],
+			TransactionCount: len(msg.Transactions), InBid: inBid,
+			IsTimely: observed.Timely, IsEquivocated: observed.Equivocated,
+		}
+		for index, tx := range msg.Transactions {
+			list.TransactionsSize += uint64(len(tx))
+			list.Transactions = append(list.Transactions, &models.SlotPageILTransaction{
+				Index: uint64(index), Size: len(tx), Data: tx,
+			})
+		}
+		pageData.InclusionLists = append(pageData.InclusionLists, list)
 	}
-
-	pageData.InclusionListCount = len(ilData)
-	pageData.InclusionLists = make([]*models.SlotPageInclusionList, 0, len(ilData))
-
-	for i, il := range ilData {
-		// Parse slot and validator index from string
-		slot, _ := strconv.ParseUint(il.Slot, 10, 64)
-		validatorIndex, _ := strconv.ParseUint(il.ValidatorIndex, 10, 64)
-
-		// Calculate total transactions size
-		var totalSize uint64
-		for _, txHex := range il.Transactions {
-			// Each transaction is hex-encoded, decode to get actual size
-			if txBytes, err := hex.DecodeString(strings.TrimPrefix(txHex, "0x")); err == nil {
-				totalSize += uint64(len(txBytes))
-			}
-		}
-
-		// Determine committee index (simplified mapping)
-		committeeIndex := i
-		isSatisfied := ilBits.IsSet(committeeIndex)
-
-		ilPageData := &models.SlotPageInclusionList{
-			Slot:                       slot,
-			ValidatorIndex:             validatorIndex,
-			ValidatorName:              services.GlobalBeaconService.GetValidatorName(validatorIndex),
-			CommitteeIndex:             committeeIndex,
-			InclusionListCommitteeRoot: []byte(il.InclusionListCommitteeRoot),
-			Signature:                  []byte(il.Signature),
-			TransactionCount:           len(il.Transactions),
-			TransactionsSize:           totalSize,
-			IsSatisfied:                isSatisfied,
-			IsEquivocated:              false, // Would need additional API call to determine
-		}
-
-		// Parse transactions
-		if len(il.Transactions) > 0 {
-			ilPageData.Transactions = make([]*models.SlotPageILTransaction, 0, len(il.Transactions))
-			for txIdx, txHex := range il.Transactions {
-				txBytes, err := hex.DecodeString(strings.TrimPrefix(txHex, "0x"))
-				if err != nil {
-					continue
-				}
-				txData := &models.SlotPageILTransaction{
-					Index: uint64(txIdx),
-					Size:  len(txBytes),
-					Data:  txBytes,
-				}
-				ilPageData.Transactions = append(ilPageData.Transactions, txData)
-			}
-		}
-
-		pageData.InclusionLists = append(pageData.InclusionLists, ilPageData)
-	}
-
-	logrus.WithFields(logrus.Fields{
-		"blockRoot":      fmt.Sprintf("%x", pageData.BlockRoot),
-		"slot":           blockData.Header.Message.Slot,
-		"ilBits":         fmt.Sprintf("%x", ilBits[:]),
-		"satisfiedCount": pageData.SatisfiedILCount,
-		"totalILs":       pageData.InclusionListCount,
-	}).Debug("Processed Inclusion Lists for block")
 }

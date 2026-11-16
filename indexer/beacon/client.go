@@ -477,6 +477,13 @@ func (c *Client) processBlock(slot phase0.Slot, root phase0.Root, header *phase0
 		c.indexer.blockDispatcher.Fire(block)
 	}
 
+	if slot >= finalizedSlot && chainState.CurrentSlot() <= slot+1 {
+		body := block.GetBlock(c.getContext())
+		if body != nil && body.Heze != nil {
+			c.storeHezeInclusionView(root, slot)
+		}
+	}
+
 	if slot < finalizedSlot && !block.isInFinalizedDb {
 		// process new orphaned block in finalized epoch
 		// TODO: insert new orphaned block to db
@@ -485,6 +492,20 @@ func (c *Client) processBlock(slot phase0.Slot, root phase0.Root, header *phase0
 	}
 
 	return
+}
+
+func (c *Client) storeHezeInclusionView(root phase0.Root, slot phase0.Slot) {
+	ctx, cancel := context.WithTimeout(c.getContext(), time.Second)
+	defer cancel()
+
+	view, err := c.client.GetRPCClient().GetHezeInclusionView(ctx, root, slot)
+	if err != nil {
+		c.logger.WithError(err).Debug("Heze inclusion view unavailable")
+		return
+	}
+	if _, err := db.StoreHezeInclusionView(ctx, view, slot); err != nil {
+		c.logger.WithError(err).Warn("Could not store Heze inclusion view")
+	}
 }
 
 // backfillParentBlocks backfills parent blocks up to the finalization checkpoint or known in cache.

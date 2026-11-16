@@ -5,7 +5,7 @@
       <table class="table table-sm table-hover align-middle mb-0">
         <thead>
           <tr>
-            <th class="border-0" style="width: 5%;">#</th>
+            <th class="border-0" style="width: 5%;">Committee positions</th>
             <th class="border-0" style="width: 12%;">Validator</th>
             <th class="border-0" style="width: 10%;">Status</th>
             <th class="border-0" style="width: 10%;">Txs</th>
@@ -18,7 +18,7 @@
           <tr>
             <td>
               <span class="badge rounded-pill text-bg-secondary" style="font-size: 12px; font-weight: 500;">
-                {{ $il.CommitteeIndex }}
+                {{ range $i, $position := $il.CommitteePositions }}{{ if $i }}, {{ end }}{{ $position }}{{ end }}
               </span>
             </td>
             <td>
@@ -33,14 +33,17 @@
                 <span class="badge text-bg-danger" style="font-size: 11px;" data-bs-toggle="tooltip" title="Validator equivocated">
                   <i class="fas fa-exclamation-triangle me-1"></i>Equivocated
                 </span>
-              {{ else if $il.IsSatisfied }}
-                <span class="badge text-bg-success" style="font-size: 11px;" data-bs-toggle="tooltip" title="IL satisfied in block">
-                  <i class="fas fa-check me-1"></i>Satisfied
+              {{ else if $il.InBid }}
+                <span class="badge text-bg-success" style="font-size: 11px;" data-bs-toggle="tooltip" title="Bid contains a committee bit for this list">
+                  <i class="fas fa-check me-1"></i>In bid
                 </span>
               {{ else }}
-                <span class="badge text-bg-warning" style="font-size: 11px;" data-bs-toggle="tooltip" title="IL not satisfied">
-                  <i class="fas fa-times me-1"></i>Not Satisfied
+                <span class="badge text-bg-warning" style="font-size: 11px;" data-bs-toggle="tooltip" title="Bid has no committee bit for this list">
+                  <i class="fas fa-times me-1"></i>Absent from bid
                 </span>
+              {{ end }}
+              {{ if not $il.IsTimely }}
+                <span class="badge text-bg-secondary">Observed late</span>
               {{ end }}
             </td>
             <td>
@@ -92,9 +95,9 @@
           <code class="ms-2">0x{{ printf "%x" .Block.InclusionListBits }}</code>
         </div>
         <div class="col-md-4">
-          <strong>Satisfied:</strong>
-          <span class="badge {{ if gt .Block.SatisfiedILCount 0 }}text-bg-success{{ else }}text-bg-secondary{{ end }} ms-2" style="font-size: 11px;">
-            {{ .Block.SatisfiedILCount }} / {{ .Block.InclusionListCount }}
+          <strong>Positions marked in bid:</strong>
+          <span class="badge {{ if gt .Block.BidInclusionPositionCount 0 }}text-bg-success{{ else }}text-bg-secondary{{ end }} ms-2" style="font-size: 11px;">
+            {{ .Block.BidInclusionPositionCount }}
           </span>
         </div>
         <div class="col-md-4">
@@ -134,7 +137,11 @@
   {{ else }}
     <div class="p-4 text-center">
       <i class="fas fa-info-circle me-2 text-muted"></i>
-      <span class="text-muted">No inclusion lists received for this slot</span>
+      {{ if .Block.InclusionViewAvailable }}
+        <span class="text-muted">No inclusion lists observed for the previous slot</span>
+      {{ else }}
+        <span class="text-muted">Inclusion-list observations are unavailable for this block</span>
+      {{ end }}
       <br>
       <small class="text-muted mt-2 d-block">
         Inclusion Lists are produced by the IL committee for the previous slot.

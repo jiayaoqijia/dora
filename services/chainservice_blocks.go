@@ -6,13 +6,13 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"time"
 
 	"github.com/attestantio/go-eth2-client/spec"
 	"github.com/attestantio/go-eth2-client/spec/deneb"
 	"github.com/attestantio/go-eth2-client/spec/phase0"
 
 	"github.com/ethpandaops/dora/blockdb"
-	"github.com/ethpandaops/dora/clients/consensus/rpc"
 	"github.com/ethpandaops/dora/db"
 	"github.com/ethpandaops/dora/dbtypes"
 	"github.com/ethpandaops/dora/indexer/beacon"
@@ -1091,14 +1091,24 @@ func (bs *ChainService) GetHighestElBlockNumber(ctx context.Context, overrideFor
 	return 0
 }
 
-// GetInclusionLists retrieves inclusion lists for a block from the CL API.
-// blockID can be a slot number, block root (hex), or "head"
-func (bs *ChainService) GetInclusionLists(ctx context.Context, blockID string) ([]*rpc.InclusionListData, error) {
-	// Get a ready client
-	client := bs.beaconIndexer.GetReadyClient(true)
-	if client == nil {
-		return nil, fmt.Errorf("no clients available")
+// GetHezeInclusionView reads the recorded view for a particular fork block.
+func (bs *ChainService) GetHezeInclusionView(ctx context.Context, root phase0.Root, slot phase0.Slot) (*dbtypes.HezeInclusionView, error) {
+	view, err := db.LoadHezeInclusionView(ctx, root)
+	if err != nil {
+		return nil, err
+	}
+	if view != nil {
+		return view, view.Validate(root, slot)
 	}
 
-	return client.GetClient().GetRPCClient().GetInclusionLists(ctx, blockID)
+	client := bs.beaconIndexer.GetReadyClientByBlockRoot(root, true)
+	if client == nil {
+		client = bs.beaconIndexer.GetReadyClient(true)
+	}
+	if client == nil {
+		return nil, nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	return client.GetClient().GetRPCClient().GetHezeInclusionView(ctx, root, slot)
 }

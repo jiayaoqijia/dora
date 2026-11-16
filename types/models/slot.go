@@ -93,11 +93,12 @@ type SlotPageBlockData struct {
 	ConsolidationRequests []*SlotPageConsolidationRequest `json:"consolidation_requests"` // ConsolidationRequests included in this block
 
 	// FOCIL (EIP-7805) fields - only populated for Heze fork blocks
-	InclusionListBits    []byte                   `json:"inclusion_list_bits"`    // BitVector[16] - 2 bytes
-	InclusionListCount   int                      `json:"inclusion_list_count"`   // Number of ILs for previous slot
-	SatisfiedILCount     int                      `json:"satisfied_il_count"`     // Number of satisfied ILs
-	InclusionLists       []*SlotPageInclusionList `json:"inclusion_lists"`        // ILs for previous slot
-	HasInclusionListData bool                     `json:"has_inclusion_list_data"` // True if this is a Heze block
+	InclusionListBits         []byte                   `json:"inclusion_list_bits"`  // BitVector[16] - 2 bytes
+	InclusionListCount        int                      `json:"inclusion_list_count"` // Number of ILs for previous slot
+	BidInclusionPositionCount int                      `json:"bid_inclusion_position_count"`
+	InclusionViewAvailable    bool                     `json:"inclusion_view_available"`
+	InclusionLists            []*SlotPageInclusionList `json:"inclusion_lists"`         // ILs for previous slot
+	HasInclusionListData      bool                     `json:"has_inclusion_list_data"` // True if this is a Heze block
 }
 
 type SlotPageExecutionData struct {
@@ -289,27 +290,28 @@ type SlotPageConsolidationRequest struct {
 
 // SlotPageInclusionList represents an inclusion list for the slot page (FOCIL - EIP-7805).
 type SlotPageInclusionList struct {
-	Slot                       uint64                   `json:"slot"`
-	ValidatorIndex             uint64                   `json:"validator_index"`
-	ValidatorName              string                   `json:"validator_name"`
-	CommitteeIndex             int                      `json:"committee_index"`       // 0-15
-	InclusionListCommitteeRoot []byte                   `json:"inclusion_list_committee_root"`
-	Transactions               []*SlotPageILTransaction `json:"transactions"`
-	TransactionCount           int                      `json:"transaction_count"`
-	TransactionsSize           uint64                   `json:"transactions_size"`     // Total size in bytes
-	Signature                  []byte                   `json:"signature"`
-	IsSatisfied                bool                     `json:"is_satisfied"`          // Whether this IL was satisfied
-	IsEquivocated              bool                     `json:"is_equivocated"`        // Whether validator equivocated
+	Slot               uint64                   `json:"slot"`
+	ValidatorIndex     uint64                   `json:"validator_index"`
+	ValidatorName      string                   `json:"validator_name"`
+	CommitteePositions []int                    `json:"committee_positions"`
+	DependentRoot      []byte                   `json:"dependent_root"`
+	Transactions       []*SlotPageILTransaction `json:"transactions"`
+	TransactionCount   int                      `json:"transaction_count"`
+	TransactionsSize   uint64                   `json:"transactions_size"` // Total size in bytes
+	Signature          []byte                   `json:"signature"`
+	InBid              bool                     `json:"in_bid"`
+	IsTimely           bool                     `json:"is_timely"`
+	IsEquivocated      bool                     `json:"is_equivocated"` // Whether validator equivocated
 }
 
 // SlotPageILTransaction represents a transaction in an inclusion list.
 type SlotPageILTransaction struct {
-	Index  uint64 `json:"index"`
-	Hash   []byte `json:"hash"`
-	From   []byte `json:"from"`
-	To     []byte `json:"to"`
-	Value  string `json:"value"`
-	Data   []byte `json:"data"`
+	Index   uint64 `json:"index"`
+	Hash    []byte `json:"hash"`
+	From    []byte `json:"from"`
+	To      []byte `json:"to"`
+	Value   string `json:"value"`
+	Data    []byte `json:"data"`
 	DataLen uint64 `json:"data_len"`
-	Size   int    `json:"size"`          // Transaction size in bytes
+	Size    int    `json:"size"` // Transaction size in bytes
 }

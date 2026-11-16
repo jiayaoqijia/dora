@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/ethpandaops/dora/dbtypes"
 	"io"
 	nethttp "net/http"
 	"net/url"
@@ -551,86 +552,20 @@ func (bc *BeaconClient) SubmitProposerSlashing(ctx context.Context, slashing *ph
 	return nil
 }
 
-// GetInclusionLists retrieves inclusion lists for a block from the CL API
-// Endpoint: GET /eth/v1/beacon/blocks/{block_id}/inclusion_lists
-func (bc *BeaconClient) GetInclusionLists(ctx context.Context, blockID string) ([]*InclusionListData, error) {
-	response := struct {
-		Data struct {
-			InclusionLists []*SignedInclusionList `json:"inclusion_lists"`
-		} `json:"data"`
-	}{}
-
-	err := bc.getJSON(ctx, fmt.Sprintf("%s/eth/v1/beacon/blocks/%s/inclusion_lists", bc.endpoint, blockID), &response)
+// GetHezeInclusionView retrieves the retained previous-slot view for one block root.
+func (bc *BeaconClient) GetHezeInclusionView(ctx context.Context, root phase0.Root, blockSlot phase0.Slot) (*dbtypes.HezeInclusionView, error) {
+	var response struct {
+		Data *dbtypes.HezeInclusionView `json:"data"`
+	}
+	err := bc.getJSON(ctx, fmt.Sprintf("%s/eth/v1/beacon/blocks/%s/inclusion_lists", bc.endpoint, root), &response)
 	if err != nil {
-		return nil, fmt.Errorf("error retrieving inclusion lists: %v", err)
+		return nil, fmt.Errorf("fetch Heze inclusion view: %w", err)
 	}
-
-	// Convert SignedInclusionList to InclusionListData
-	result := make([]*InclusionListData, 0, len(response.Data.InclusionLists))
-	for _, signedIL := range response.Data.InclusionLists {
-		if signedIL.Message == nil {
-			continue
-		}
-
-		// Convert byte array transactions to hex strings
-		txs := make([]string, 0, len(signedIL.Message.Transactions))
-		for _, txBytes := range signedIL.Message.Transactions {
-			txs = append(txs, fmt.Sprintf("0x%x", txBytes))
-		}
-
-		result = append(result, &InclusionListData{
-			Slot:                       signedIL.Message.Slot,
-			ValidatorIndex:             signedIL.Message.ValidatorIndex,
-			InclusionListCommitteeRoot: signedIL.Message.InclusionListCommitteeRoot,
-			Transactions:               txs,
-			Signature:                  signedIL.Signature,
-		})
+	if response.Data == nil {
+		return nil, fmt.Errorf("missing Heze inclusion view for %s", root)
 	}
-
-	return result, nil
-}
-
-// SignedInclusionList represents a signed inclusion list from the CL API
-type SignedInclusionList struct {
-	Message   *InclusionListMessage `json:"message"`
-	Signature string                `json:"signature"`
-}
-
-// InclusionListMessage represents the message part of an inclusion list
-type InclusionListMessage struct {
-	Slot                       string      `json:"slot"`
-	ValidatorIndex             string      `json:"validator_index"`
-	InclusionListCommitteeRoot string      `json:"inclusion_list_committee_root"`
-	Transactions               [][]uint8   `json:"transactions"` // Each transaction is a byte array
-}
-
-// InclusionListData represents an inclusion list from the CL API (flattened for convenience)
-type InclusionListData struct {
-	Slot                       string   `json:"slot"`
-	ValidatorIndex             string   `json:"validator_index"`
-	InclusionListCommitteeRoot string   `json:"inclusion_list_committee_root"`
-	Transactions               []string `json:"transactions"` // Hex-encoded transaction strings
-	Signature                  string   `json:"signature"`
-}
-
-// GetInclusionListCommittee retrieves the inclusion list committee for a state
-// Endpoint: GET /eth/v1/beacon/states/{state_id}/inclusion_list_committee
-func (bc *BeaconClient) GetInclusionListCommittee(ctx context.Context, stateID string) (*InclusionListCommitteeResponse, error) {
-	response := struct {
-		Data *InclusionListCommitteeResponse `json:"data"`
-	}{}
-
-	err := bc.getJSON(ctx, fmt.Sprintf("%s/eth/v1/beacon/states/%s/inclusion_list_committee", bc.endpoint, stateID), &response)
-	if err != nil {
-		return nil, fmt.Errorf("error retrieving inclusion list committee: %v", err)
+	if err := response.Data.Validate(root, blockSlot); err != nil {
+		return nil, err
 	}
-
 	return response.Data, nil
-}
-
-// InclusionListCommitteeResponse represents the response from the inclusion list committee endpoint
-type InclusionListCommitteeResponse struct {
-	Slot       string   `json:"slot"`
-	Committee  []string `json:"committee"`
-	TotalCount string   `json:"total_count"`
 }
